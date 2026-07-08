@@ -27,10 +27,15 @@ func RequireToken(lookup OrgLookup) func(http.Handler) http.Handler {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
-			ctx := context.WithValue(r.Context(), ctxKey{}, org)
+			ctx := WithOrg(r.Context(), org)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// WithOrg stores org in context (used by RequireToken and by tests).
+func WithOrg(ctx context.Context, org *db.Org) context.Context {
+	return context.WithValue(ctx, ctxKey{}, org)
 }
 
 func bearer(r *http.Request) (string, bool) {
