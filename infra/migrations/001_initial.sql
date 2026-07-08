@@ -2,7 +2,7 @@
 CREATE TABLE organizations (
     id                  BIGSERIAL PRIMARY KEY,
     idp_org_id          TEXT UNIQUE,
-    slug                TEXT NOT NULL UNIQUE,
+    slug                TEXT NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9-]+$'),
     name                TEXT NOT NULL,
     plan                TEXT NOT NULL DEFAULT 'free',
     storage_limit_bytes BIGINT NOT NULL DEFAULT 0, -- 0 = unlimited (Phase 1: unenforced)

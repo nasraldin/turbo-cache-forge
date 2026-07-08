@@ -64,7 +64,11 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 	org, _ := auth.OrgFromContext(r.Context())
 	key := storageKey(org.Slug, hash)
 	if _, err := h.store.Head(r.Context(), key); err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		if errors.Is(err, storage.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

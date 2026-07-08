@@ -17,18 +17,35 @@ service built from this repo — no external goose image needed), and starts
 host; Postgres is reachable only over the compose network, not from the host.
 `cache-api` runs as a non-root user (uid `65532`) in a distroless image.
 
-Seed an organization and a dev token (`turbo_dev`):
+Seed an organization and a dev token (`turbo_dev`). The snippet below uses
+`$POSTGRES_USER` / `$POSTGRES_DB` (falling back to the `tcf` defaults) so it
+still works if you've overridden those creds (see "Overriding Postgres
+creds" below):
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml exec postgres \
-  psql -U tcf -d tcf -c \
+  psql -U "${POSTGRES_USER:-tcf}" -d "${POSTGRES_DB:-tcf}" -c \
   "INSERT INTO organizations (slug,name) VALUES ('my-team','My Team');"
 
 TOKEN_HASH=$(printf 'turbo_dev' | shasum -a 256 | cut -d' ' -f1)
 docker compose -f infra/docker/docker-compose.yml exec postgres \
-  psql -U tcf -d tcf -c \
+  psql -U "${POSTGRES_USER:-tcf}" -d "${POSTGRES_DB:-tcf}" -c \
   "INSERT INTO api_keys (org_id,name,token_hash) SELECT id,'dev','$TOKEN_HASH' FROM organizations WHERE slug='my-team';"
 ```
+
+### Overriding Postgres creds
+
+Docker Compose auto-loads a `.env` file from the compose **file's directory**
+(`infra/docker/`), not the repo root and not your current working directory.
+Running `docker compose -f infra/docker/docker-compose.yml up` from the repo
+root will **not** pick up a repo-root `.env` — the `POSTGRES_*` vars will
+silently stay at the `tcf`/`tcf` defaults. To override them, do one of:
+
+1. Copy [`.env.example`](.env.example) to `infra/docker/.env` (compose
+   auto-loads it from there), or
+2. Pass `--env-file path/to/your.env` explicitly to `docker compose`, or
+3. Export `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` in your shell
+   before running `docker compose up` — compose inherits shell env vars too.
 
 Point Turborepo at it:
 
