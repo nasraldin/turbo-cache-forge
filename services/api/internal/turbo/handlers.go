@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 )
 
@@ -31,10 +32,11 @@ type Handler struct {
 	store    ArtifactStore
 	repo     MetaRepo
 	maxBytes int64
+	metrics  *obs.Metrics
 }
 
-func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64) *Handler {
-	return &Handler{store: store, repo: repo, maxBytes: maxBytes}
+func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64, metrics *obs.Metrics) *Handler {
+	return &Handler{store: store, repo: repo, maxBytes: maxBytes, metrics: metrics}
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -97,6 +99,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "metadata write failed", http.StatusInternalServerError)
 		return
 	}
+	h.metrics.UploadBytes.Add(float64(info.Size))
 	writeJSON(w, http.StatusAccepted, map[string][]string{"urls": {key}})
 }
 
@@ -111,6 +114,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 
 	rc, info, err := h.store.Get(r.Context(), key)
 	if errors.Is(err, storage.ErrNotFound) {
+		h.metrics.CacheMiss.Inc()
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -119,6 +123,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rc.Close()
+	h.metrics.CacheHit.Inc()
+	h.metrics.DownloadBytes.Add(float64(info.Size))
 
 	// fire-and-forget last_accessed bump — never block the download on the DB
 	// ponytail: fire-and-forget touch; batch it only if last_accessed write volume ever shows up in DB metrics

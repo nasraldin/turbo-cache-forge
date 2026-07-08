@@ -15,3 +15,12 @@ func TestLiveEndpoint(t *testing.T) {
 		t.Fatalf("GET /live = %d, want 200", rec.Code)
 	}
 }
+
+func TestMetricsEndpoint(t *testing.T) {
+	srv := New(Deps{}) // no repo → Turbo routes skipped, metrics still up
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics = %d, want 200", rec.Code)
+	}
+}
