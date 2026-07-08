@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tcf
+      POSTGRES_PASSWORD: tcf
+      POSTGRES_DB: tcf
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tcf"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: ghcr.io/pressly/goose:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes: ["../migrations:/migrations"]
+    command: ["-dir", "/migrations", "postgres",
+      "postgres://tcf:tcf@postgres:5432/tcf?sslmode=disable", "up"]
+
+  cache-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgres://tcf:tcf@postgres:5432/tcf?sslmode=disable
+      STORAGE_BACKEND: fs
+      STORAGE_PATH: /data
+    volumes: ["cache-data:/data"]
+    ports: ["8080:8080"]
+
+volumes:
+  cache-data:
