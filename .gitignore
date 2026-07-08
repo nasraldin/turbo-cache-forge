@@ -1,0 +1,10 @@
+# Go
+/services/api/server
+*.out
+# scratch / sdd
+/.sdd-scratch/
+/.superpowers/
+# env
+.env
+# data
+/data/
