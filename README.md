@@ -10,8 +10,12 @@ required to run it.
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
-This starts Postgres, applies the schema migration, and starts `cache-api` on
-`http://localhost:8080` using the filesystem storage backend (`STORAGE_BACKEND=fs`).
+This starts Postgres, applies the schema migration (via a self-contained `migrate`
+service built from this repo — no external goose image needed), and starts
+`cache-api` on `http://localhost:8080` using the filesystem storage backend
+(`STORAGE_BACKEND=fs`). Only `cache-api`'s port (`8080`) is published to the
+host; Postgres is reachable only over the compose network, not from the host.
+`cache-api` runs as a non-root user (uid `65532`) in a distroless image.
 
 Seed an organization and a dev token (`turbo_dev`):
 
