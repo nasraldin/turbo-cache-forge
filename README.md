@@ -4,6 +4,10 @@ A self-hosted Turborepo remote cache server (Turbo API v8) with Postgres metadat
 and a pluggable storage backend (local filesystem or S3/R2). No cloud account
 required to run it.
 
+**Status:** Phase 1 (Cache API MVP) is complete. See [`docs/ROADMAP.md`](docs/ROADMAP.md)
+for full status, the phased plan, and cross-phase invariants — read it first before
+working on any phase.
+
 ## Quickstart (docker compose)
 
 ```bash
