@@ -12,10 +12,10 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 | Phase | Title | Status | Plan | Notes |
 |------|-------|--------|------|-------|
 | 1 | Cache API MVP | ✅ **Done** | [phase-1 plan](superpowers/plans/2026-07-08-turbo-cache-forge-phase1.md) | PR #1 merged → `main` (`1e90bfa`). Live `docker compose up` MISS→HIT proven. |
-| 2 | Concurrency & heavy-cache hardening | ⬜ **Next** | _generate at kickoff_ | Absorbs most Phase-1 follow-ups below. |
-| 3 | Management API + OIDC/JWT | ⬜ Planned | _tbd_ | Depends on Phase 2. |
-| 4 | Dashboard | ⬜ Planned | _tbd_ | Depends on Phase 3 (`/api/v1`). |
-| 5 | CLI (`turbo-cache`) | ⬜ Planned | _tbd_ | Thin client over `/api/v1`. |
+| 2 | Concurrency & heavy-cache hardening | ⬜ **Next** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks. Absorbs most Phase-1 follow-ups below. |
+| 3 | Management API + OIDC/JWT | ⬜ Planned | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks. Depends on Phase 2. |
+| 4 | Dashboard | ⬜ Planned | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
+| 5 | CLI (`turbo-cache`) | ⬜ Planned | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 💤 deferred (no near-term work).
