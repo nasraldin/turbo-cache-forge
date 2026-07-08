@@ -54,8 +54,13 @@ func (h *Handler) events(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	if !validHash(hash) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	org, _ := auth.OrgFromContext(r.Context())
-	key := storageKey(org.Slug, chi.URLParam(r, "hash"))
+	key := storageKey(org.Slug, hash)
 	if _, err := h.store.Head(r.Context(), key); err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -64,8 +69,12 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
-	org, _ := auth.OrgFromContext(r.Context())
 	hash := chi.URLParam(r, "hash")
+	if !validHash(hash) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	org, _ := auth.OrgFromContext(r.Context())
 	key := storageKey(org.Slug, hash)
 
 	body := http.MaxBytesReader(w, r.Body, h.maxBytes)
@@ -92,8 +101,12 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	org, _ := auth.OrgFromContext(r.Context())
 	hash := chi.URLParam(r, "hash")
+	if !validHash(hash) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	org, _ := auth.OrgFromContext(r.Context())
 	key := storageKey(org.Slug, hash)
 
 	rc, info, err := h.store.Get(r.Context(), key)
