@@ -12,10 +12,10 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 | Phase | Title | Status | Plan | Notes |
 |------|-------|--------|------|-------|
 | 1 | Cache API MVP | ✅ **Done** | [phase-1 plan](superpowers/plans/2026-07-08-turbo-cache-forge-phase1.md) | PR #1 merged → `main` (`1e90bfa`). Live `docker compose up` MISS→HIT proven. |
-| 2 | Concurrency & heavy-cache hardening | ⬜ **Next** | _generate at kickoff_ | Absorbs most Phase-1 follow-ups below. |
-| 3 | Management API + OIDC/JWT | ⬜ Planned | _tbd_ | Depends on Phase 2. |
-| 4 | Dashboard | ⬜ Planned | _tbd_ | Depends on Phase 3 (`/api/v1`). |
-| 5 | CLI (`turbo-cache`) | ⬜ Planned | _tbd_ | Thin client over `/api/v1`. |
+| 2 | Concurrency & heavy-cache hardening | ⬜ **Next** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks. Absorbs most Phase-1 follow-ups below. |
+| 3 | Management API + OIDC/JWT | ⬜ Planned | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks. Depends on Phase 2. |
+| 4 | Dashboard | ⬜ Planned | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
+| 5 | CLI (`turbo-cache`) | ⬜ Planned | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 💤 deferred (no near-term work).
@@ -39,7 +39,7 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 - **Tenant isolation is layered** — `org_slug/hash` key + `validHash` boundary check + DB `CHECK(slug ~ '^[a-z0-9-]+$')` + `UNIQUE(org_id, hash)`. Any new key-building path must validate both sides.
 - **One metrics pipeline** — Prometheus. OTel is tracing-only, a no-op unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 - **Storage via the `storage.Storage` interface only** — no direct disk/S3 calls in handlers. New backends must pass `storagetest.Run`.
-- **Toolchain:** Go 1.24 (raised from 1.23 for aws-sdk-go-v2); pgx pinned v5.7.6 for go1.24 compat.
+- **Toolchain:** Go 1.25 (raised from 1.24 for aws-sdk-go-v2); pgx no longer pinned — go1.24-compat pin removed now that the module floor is 1.25.
 - **SaaS-ready shape:** `org_id` on every table; quota columns present but unenforced until a phase turns them on.
 
 ---
