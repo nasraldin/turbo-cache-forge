@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tcf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tcf}
+      POSTGRES_DB: ${POSTGRES_DB:-tcf}
+    # No published port: only cache-api and migrate reach Postgres, over the
+    # compose network. Nothing external needs direct DB access.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tcf}"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: goose
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["-dir", "/migrations", "postgres",
+      "postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable", "up"]
+
+  cache-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: cache-api
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable
+      STORAGE_BACKEND: fs
+      STORAGE_PATH: /data
+    volumes: ["cache-data:/data"]
+    ports: ["8080:8080"]
+
+volumes:
+  cache-data:
