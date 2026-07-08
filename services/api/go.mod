@@ -1,6 +1,6 @@
 module github.com/nasraldin/turbo-cache-forge/services/api
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.28
@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.31
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.0
 	github.com/go-chi/chi/v5 v5.3.1
+	github.com/jackc/pgx/v5 v5.7.6
 )
 
 require (
@@ -26,4 +27,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.37.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.44.0 // indirect
 	github.com/aws/smithy-go v1.27.3 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 )
