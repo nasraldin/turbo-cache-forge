@@ -1,4 +1,4 @@
-FROM golang:1.24 AS build
+FROM golang:1.25 AS build
 WORKDIR /src
 COPY services/api/go.mod services/api/go.sum ./services/api/
 RUN cd services/api && go mod download
@@ -12,7 +12,7 @@ RUN mkdir -p /data && chown -R 65532:65532 /data
 
 # Self-contained goose image for the compose "migrate" step — no external
 # goose image required (ghcr.io/pressly/goose does not reliably resolve).
-FROM golang:1.24 AS goose
+FROM golang:1.25 AS goose
 ENV GOTOOLCHAIN=auto
 RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 COPY infra/migrations /migrations

@@ -6,7 +6,7 @@
 
 **Architecture:** Single Go binary (`chi` router over `net/http`). CLI hot path = validate hashed token → stream bytes to/from a `Storage` backend (filesystem default, S3 optional). Postgres holds orgs, tokens, and artifact metadata; metadata writes stay off the download hot path (fire-and-forget `last_accessed`). Everything runs from `docker compose up` with zero cloud accounts.
 
-**Tech Stack:** Go 1.24 (raised from 1.23 in Task 4 — current aws-sdk-go-v2 requires go1.24), chi v5, pgx v5 (+ pgxpool), goose (SQL migrations), aws-sdk-go-v2 (S3 backend), prometheus/client_golang, stdlib `testing`. Postgres 16 in docker-compose.
+**Tech Stack:** Go 1.25 (raised from 1.24 to unblock pgx v5.9.2 / x/crypto v0.52.0 Dependabot updates, both of which require go1.25), chi v5, pgx v5 (+ pgxpool), goose (SQL migrations), aws-sdk-go-v2 (S3 backend), prometheus/client_golang, stdlib `testing`. Postgres 16 in docker-compose.
 
 ## Global Constraints
 
