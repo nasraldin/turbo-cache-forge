@@ -1,0 +1,33 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: turbo-cache
+    dir: services/cli
+    main: ./cmd/turbo-cache
+    binary: turbo-cache
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/nasraldin/turbo-cache-forge/services/cli/internal/cli.Version={{.Version}}
+
+archives:
+  - id: turbo-cache
+    ids: [turbo-cache]
+    name_template: "turbo-cache_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: nasraldin
+    name: turbo-cache-forge
