@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,7 @@ type ArtifactStore interface {
 	Put(ctx context.Context, key string, r io.Reader) error
 	Get(ctx context.Context, key string) (io.ReadCloser, *storage.ObjectInfo, error)
 	Head(ctx context.Context, key string) (*storage.ObjectInfo, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type MetaRepo interface {
@@ -100,6 +102,11 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	}
 	tag := r.Header.Get("x-artifact-tag")
 	if err := h.repo.UpsertArtifact(r.Context(), org.ID, hash, info.Size, tag); err != nil {
+		// Best-effort compensating delete — see Task 5's Decision note in the
+		// Phase 2 plan for why this is eager rather than a repair-sweep TODO.
+		if delErr := h.store.Delete(r.Context(), key); delErr != nil {
+			log.Printf("turbo: put %s: compensating delete after metadata failure also failed: %v", key, delErr)
+		}
 		http.Error(w, "metadata write failed", http.StatusInternalServerError)
 		return
 	}

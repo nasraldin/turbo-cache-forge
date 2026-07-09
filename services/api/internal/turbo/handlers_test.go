@@ -3,6 +3,7 @@ package turbo
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -50,6 +51,12 @@ func (m *memStore) Head(_ context.Context, key string) (*storage.ObjectInfo, err
 	}
 	return &storage.ObjectInfo{Size: int64(len(b))}, nil
 }
+func (m *memStore) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	delete(m.data, key)
+	m.mu.Unlock()
+	return nil
+}
 
 type memRepo struct{ exists bool }
 
@@ -61,7 +68,7 @@ func (m *memRepo) TouchArtifact(context.Context, int64, string) error           
 // tests can prove a rejected request never reached the backend.
 type spyStore struct {
 	*memStore
-	headCalled, putCalled, getCalled bool
+	headCalled, putCalled, getCalled, deleteCalled bool
 }
 
 func newSpyStore() *spyStore { return &spyStore{memStore: newMemStore()} }
@@ -76,6 +83,10 @@ func (s *spyStore) Put(ctx context.Context, key string, r io.Reader) error {
 func (s *spyStore) Get(ctx context.Context, key string) (io.ReadCloser, *storage.ObjectInfo, error) {
 	s.getCalled = true
 	return s.memStore.Get(ctx, key)
+}
+func (s *spyStore) Delete(ctx context.Context, key string) error {
+	s.deleteCalled = true
+	return s.memStore.Delete(ctx, key)
 }
 
 // requestWithHash builds a request carrying an arbitrary (possibly hostile)
@@ -228,6 +239,33 @@ func TestPutThenGetRoundTrip(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(m.DownloadBytes); got != float64(len(body)) {
 		t.Fatalf("DownloadBytes = %v, want %d", got, len(body))
+	}
+}
+
+type failingUpsertRepo struct{ memRepo }
+
+func (f *failingUpsertRepo) UpsertArtifact(context.Context, int64, string, int64, string) error {
+	return errors.New("db unavailable")
+}
+
+func TestPutCompensatesStorageWhenMetadataWriteFails(t *testing.T) {
+	store := newSpyStore()
+	m := obs.NewMetrics()
+	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m)
+
+	rec := httptest.NewRecorder()
+	req := requestWithHash(http.MethodPut, "a1b2c3")
+	req.Body = io.NopCloser(bytes.NewReader([]byte("payload")))
+	h.put(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("PUT with failing metadata write = %d, want 500", rec.Code)
+	}
+	if !store.deleteCalled {
+		t.Fatal("expected a compensating Delete after UpsertArtifact failure")
+	}
+	if _, err := store.Head(context.Background(), "team-a/a1b2c3"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("object should have been deleted after metadata failure, Head err = %v", err)
 	}
 }
 
