@@ -47,9 +47,10 @@ func runDoctor(ctx context.Context, httpClient *http.Client, base, token string)
 	// 3. server reachable — hit the Turbo protocol status endpoint. ANY HTTP
 	// response (even 401, since it's hashed-bearer-protected) proves the
 	// process is up; only a transport error means it's actually down.
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v8/artifacts/status", nil)
-	resp, err := httpClient.Do(req)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v8/artifacts/status", nil)
 	if err != nil {
+		results = append(results, checkResult{"server reachable", false, err.Error()})
+	} else if resp, err := httpClient.Do(req); err != nil {
 		results = append(results, checkResult{"server reachable", false, err.Error()})
 	} else {
 		resp.Body.Close()

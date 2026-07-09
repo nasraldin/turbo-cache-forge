@@ -64,6 +64,11 @@ func TestRunDoctorNotLoggedIn(t *testing.T) {
 	assertCheck(t, results, "auth", false)
 }
 
+func TestRunDoctorMalformedURL(t *testing.T) {
+	results := runDoctor(context.Background(), http.DefaultClient, "http://bad\x7fhost", "any-token")
+	assertCheck(t, results, "server reachable", false)
+}
+
 func assertCheck(t *testing.T, results []checkResult, name string, wantOK bool) {
 	t.Helper()
 	for _, r := range results {
