@@ -44,6 +44,15 @@ export interface ArtifactsPage {
   artifacts: Artifact[];
 }
 
+// Element of GET /api/v1/stats/timeseries — one row per active day.
+export interface StatsPoint {
+  day: string; // YYYY-MM-DD
+  hits: number;
+  misses: number;
+  bytes_up: number;
+  bytes_down: number;
+}
+
 // GET /api/v1/tokens (array). Hand-built snake_case map; never includes the
 // token secret.
 export interface Token {

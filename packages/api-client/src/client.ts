@@ -1,4 +1,4 @@
-import type { ArtifactsPage, CreatedToken, Project, Stats, Token } from "@tcf/types";
+import type { ArtifactsPage, CreatedToken, Project, Stats, StatsPoint, Token } from "@tcf/types";
 
 export class ApiError extends Error {
   status: number;
@@ -37,6 +37,8 @@ export function createApiClient(opts: ApiClientOptions) {
 
   return {
     getStats: () => request<Stats>("/stats"),
+    getStatsTimeseries: (days: number) =>
+      request<StatsPoint[]>(`/stats/timeseries?days=${days}`),
     listProjects: () => request<Project[]>("/projects"),
     createProject: (input: { slug: string; name: string }) =>
       request<Project>("/projects", { method: "POST", body: JSON.stringify(input) }),

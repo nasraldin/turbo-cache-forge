@@ -236,6 +236,41 @@ func (r *Repo) Stats(ctx context.Context, orgID int64) (s Stats, err error) {
 	return s, nil
 }
 
+type StatsPoint struct {
+	Day       string `json:"day"` // YYYY-MM-DD
+	Hits      int64  `json:"hits"`
+	Misses    int64  `json:"misses"`
+	BytesUp   int64  `json:"bytes_up"`
+	BytesDown int64  `json:"bytes_down"`
+}
+
+// StatsSeries returns per-day usage for the last `days` days, oldest first.
+// Days with no activity are simply absent (the chart connects across gaps).
+// ponytail: gap-filling (zero rows for silent days) left out; add a generate_series
+// LEFT JOIN if the chart needs continuous days.
+func (r *Repo) StatsSeries(ctx context.Context, orgID int64, days int) (pts []StatsPoint, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.StatsSeries")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT to_char(day,'YYYY-MM-DD'), hits, misses, bytes_up, bytes_down
+	           FROM usage_daily
+	           WHERE org_id=$1 AND day >= CURRENT_DATE - $2::int
+	           ORDER BY day`
+	rows, err := r.pool.Query(ctx, q, orgID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p StatsPoint
+		if err = rows.Scan(&p.Day, &p.Hits, &p.Misses, &p.BytesUp, &p.BytesDown); err != nil {
+			return nil, err
+		}
+		pts = append(pts, p)
+	}
+	return pts, rows.Err()
+}
+
 type Artifact struct {
 	Hash           string    `json:"hash"`
 	SizeBytes      int64     `json:"size_bytes"`

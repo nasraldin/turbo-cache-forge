@@ -22,6 +22,7 @@ type Repo interface {
 	CreateProject(ctx context.Context, orgID int64, slug, name string) (db.Project, error)
 	ListProjects(ctx context.Context, orgID int64) ([]db.Project, error)
 	Stats(ctx context.Context, orgID int64) (db.Stats, error)
+	StatsSeries(ctx context.Context, orgID int64, days int) ([]db.StatsPoint, error)
 	ListArtifacts(ctx context.Context, orgID int64, limit, offset int) ([]db.Artifact, error)
 }
 
@@ -36,6 +37,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/projects", h.createProject)
 	r.Get("/projects", h.listProjects)
 	r.Get("/stats", h.stats)
+	r.Get("/stats/timeseries", h.statsTimeseries)
 	r.Get("/artifacts", h.listArtifacts)
 }
 
@@ -162,6 +164,35 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 		"hits": s.Hits, "misses": s.Misses, "requests": s.Requests,
 		"bytes_up": s.BytesUp, "bytes_down": s.BytesDown,
 	})
+}
+
+func (h *Handler) statsTimeseries(w http.ResponseWriter, r *http.Request) {
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			days = n
+		}
+	}
+	if days < 1 {
+		days = 1
+	}
+	if days > 365 {
+		days = 365
+	}
+	pts, err := h.repo.StatsSeries(r.Context(), org.ID, days)
+	if err != nil {
+		http.Error(w, "stats series failed", http.StatusInternalServerError)
+		return
+	}
+	if pts == nil {
+		pts = []db.StatsPoint{} // serialize [] not null
+	}
+	writeJSON(w, http.StatusOK, pts)
 }
 
 func (h *Handler) listArtifacts(w http.ResponseWriter, r *http.Request) {
