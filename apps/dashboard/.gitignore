@@ -1,0 +1,19 @@
+# dependencies / build output
+node_modules
+.next
+.turbo
+out
+dist
+
+# env files (NEVER commit — hold Clerk secret keys). .env.example is committed.
+.env
+.env.local
+.env*.local
+.env.development.local
+.env.production.local
+
+# misc
+*.tsbuildinfo
+.DS_Store
+playwright-report
+test-results

@@ -4,6 +4,7 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 
 - **Design/spec:** [`docs/superpowers/specs/2026-07-08-turbo-cache-forge-design.md`](superpowers/specs/2026-07-08-turbo-cache-forge-design.md)
 - **Repo:** github.com/nasraldin/turbo-cache-forge
+- **➡️ Current status, how to run locally, and next options:** [`docs/HANDOFF.md`](./HANDOFF.md) — **all 5 phases Done & merged (2026-07-09).**
 
 ---
 
