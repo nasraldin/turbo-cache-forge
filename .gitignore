@@ -8,3 +8,9 @@
 .env
 # data
 /data/
+# JS/TS monorepo (dashboard)
+node_modules/
+.next/
+.turbo/
+dist/
+*.tsbuildinfo

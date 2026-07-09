@@ -15,12 +15,14 @@ import (
 )
 
 type fakeRepo struct {
-	created   db.APIKey
-	revokedOK bool
-	tokens    []db.APIKey
-	projects  []db.Project
-	stats     db.Stats
-	artifacts []db.Artifact
+	created       db.APIKey
+	revokedOK     bool
+	tokens        []db.APIKey
+	projects      []db.Project
+	stats         db.Stats
+	statsSeries   []db.StatsPoint
+	seriesDaysGot int
+	artifacts     []db.Artifact
 }
 
 func (f *fakeRepo) CreateToken(_ context.Context, _ int64, name, _ string) (int64, error) {
@@ -34,6 +36,10 @@ func (f *fakeRepo) CreateProject(_ context.Context, _ int64, slug, name string) 
 }
 func (f *fakeRepo) ListProjects(context.Context, int64) ([]db.Project, error)      { return f.projects, nil }
 func (f *fakeRepo) Stats(context.Context, int64) (db.Stats, error)                 { return f.stats, nil }
+func (f *fakeRepo) StatsSeries(_ context.Context, _ int64, days int) ([]db.StatsPoint, error) {
+	f.seriesDaysGot = days
+	return f.statsSeries, nil
+}
 func (f *fakeRepo) ListArtifacts(context.Context, int64, int, int) ([]db.Artifact, error) {
 	return f.artifacts, nil
 }
@@ -145,8 +151,64 @@ func TestStatsAndArtifacts(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=10", nil))
-	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"h1"`)) {
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"hash":"h1"`)) {
 		t.Fatalf("artifacts = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestStatsTimeseries(t *testing.T) {
+	repo := &fakeRepo{statsSeries: []db.StatsPoint{
+		{Day: "2026-07-01", Hits: 40, Misses: 5, BytesUp: 10, BytesDown: 20},
+		{Day: "2026-07-02", Hits: 50, Misses: 5, BytesUp: 10, BytesDown: 20},
+	}}
+	r := testRouter(repo)
+
+	// explicit days is passed through to the repo untouched
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries?days=7", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /stats/timeseries?days=7 = %d", rec.Code)
+	}
+	if repo.seriesDaysGot != 7 {
+		t.Fatalf("days passed to repo = %d, want 7", repo.seriesDaysGot)
+	}
+	var pts []db.StatsPoint
+	if err := json.Unmarshal(rec.Body.Bytes(), &pts); err != nil {
+		t.Fatalf("bad json: %v (%s)", err, rec.Body)
+	}
+	if len(pts) != 2 || pts[0].Day != "2026-07-01" {
+		t.Fatalf("pts = %+v", pts)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"bytes_down":20`)) {
+		t.Fatalf("expected snake_case keys, got %s", rec.Body)
+	}
+
+	// missing days defaults to 30
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries", nil))
+	if rec.Code != http.StatusOK || repo.seriesDaysGot != 30 {
+		t.Fatalf("default days = %d (code %d), want 30", repo.seriesDaysGot, rec.Code)
+	}
+
+	// oversized days clamps to 365
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries?days=9999", nil))
+	if rec.Code != http.StatusOK || repo.seriesDaysGot != 365 {
+		t.Fatalf("clamp days = %d (code %d), want 365", repo.seriesDaysGot, rec.Code)
+	}
+
+	// zero/negative days clamps to the floor of 1
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries?days=-5", nil))
+	if rec.Code != http.StatusOK || repo.seriesDaysGot != 1 {
+		t.Fatalf("clamp negative days = %d (code %d), want 1", repo.seriesDaysGot, rec.Code)
+	}
+
+	// non-numeric days is rejected outright rather than silently defaulted
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries?days=abc", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad days = %d, want 400", rec.Code)
 	}
 }
 
@@ -203,6 +265,7 @@ func TestMgmtHandlersRequireOrg(t *testing.T) {
 		{http.MethodPost, "/api/v1/projects"},
 		{http.MethodGet, "/api/v1/projects"},
 		{http.MethodGet, "/api/v1/stats"},
+		{http.MethodGet, "/api/v1/stats/timeseries"},
 		{http.MethodGet, "/api/v1/artifacts"},
 	}
 	for _, c := range cases {

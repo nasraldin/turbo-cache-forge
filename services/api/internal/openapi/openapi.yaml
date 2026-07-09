@@ -18,6 +18,48 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: OIDC-issued JWT for /api/v1.
+  schemas:
+    Project:
+      type: object
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+    Artifact:
+      type: object
+      properties:
+        hash: { type: string }
+        size_bytes: { type: integer }
+        tag: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_accessed_at: { type: string, format: date-time }
+    Stats:
+      type: object
+      properties:
+        storage_bytes: { type: integer }
+        artifact_count: { type: integer }
+        hits: { type: integer }
+        misses: { type: integer }
+        requests: { type: integer }
+        bytes_up: { type: integer }
+        bytes_down: { type: integer }
+    StatsPoint:
+      type: object
+      properties:
+        day: { type: string, format: date }
+        hits: { type: integer }
+        misses: { type: integer }
+        bytes_up: { type: integer }
+        bytes_down: { type: integer }
+    Token:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
 paths:
   /api/v1/tokens:
     post:
@@ -42,7 +84,12 @@ paths:
     get:
       summary: List API tokens (no secrets)
       security: [{ oidcJWT: [] }]
-      responses: { "200": { description: OK } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Token" } }
   /api/v1/tokens/{id}:
     delete:
       summary: Revoke an API token
@@ -61,16 +108,45 @@ paths:
               type: object
               required: [slug, name]
               properties: { slug: { type: string, pattern: "^[a-z0-9-]+$" }, name: { type: string } }
-      responses: { "201": { description: Created } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
     get:
       summary: List projects
       security: [{ oidcJWT: [] }]
-      responses: { "200": { description: OK } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Project" } }
   /api/v1/stats:
     get:
       summary: Org usage stats (storage, hit/miss, requests)
       security: [{ oidcJWT: [] }]
-      responses: { "200": { description: OK } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+  /api/v1/stats/timeseries:
+    get:
+      summary: Per-day usage series (hits/misses/bytes) for the trend chart
+      security: [{ oidcJWT: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StatsPoint" }
   /api/v1/artifacts:
     get:
       summary: List cache artifacts (paginated)
@@ -78,7 +154,17 @@ paths:
       parameters:
         - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
-      responses: { "200": { description: OK } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  artifacts: { type: array, items: { $ref: "#/components/schemas/Artifact" } }
   /v8/artifacts/status:
     get:
       summary: Turbo remote-cache status
