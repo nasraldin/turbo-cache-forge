@@ -14,8 +14,8 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 | 1 | Cache API MVP | ✅ **Done** | [phase-1 plan](superpowers/plans/2026-07-08-turbo-cache-forge-phase1.md) | PR #1 merged → `main` (`1e90bfa`). Live `docker compose up` MISS→HIT proven. |
 | 2 | Concurrency & heavy-cache hardening | ✅ **Done** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks on branch `phase-2-hardening`. Load test flat-memory proven, batch endpoint, OTel+Sentry opt-in seams, backlog cleared. |
 | 3 | Management API + OIDC/JWT | ✅ **Done** | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks on branch `phase-3-management-api-oidc`. `/api/v1` (OIDC), usage rollup, cleanup cron, OpenAPI. Live DB + hermetic JWKS verified. |
-| 4 | Dashboard | ⬜ **Next** | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
-| 5 | CLI (`turbo-cache`) | ⬜ Planned | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
+| 4 | Dashboard | ✅ **Done** | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks on branch `phase-4-dashboard`. Next.js 15 monorepo, 9 pages, hit-meter signature, thin `/api/v1/stats/timeseries` + ECharts trend, gated Playwright e2e, Docker image. Final whole-branch review: READY TO MERGE, all 6 cross-phase invariants hold. |
+| 5 | CLI (`turbo-cache`) | ⬜ **Next** | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 💤 deferred (no near-term work).
@@ -109,17 +109,19 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 
 ---
 
-## Phase 4 — Dashboard ⬜ Planned
+## Phase 4 — Dashboard ✅ DONE
 
 **Goal:** a focused management + observability UI over `/api/v1`.
 
-**Scope / deliverables:** Next.js 15 + TS + Tailwind + shadcn/ui + TanStack Query + Clerk login (browser only). Pages: Overview (storage / hit rate / requests), Projects, Cache Statistics, Artifacts, API Keys (create/revoke), Team Members, Storage Usage, Settings; Billing stubbed. Charts: plain numbers first, a couple of ECharts panels only where a trend genuinely helps. Deployable via `docker compose` with `NEXT_PUBLIC_API_URL`.
+**Scope / deliverables:** Next.js 15 + TS + Tailwind 4 + hand-written shadcn-style primitives + TanStack Query v5 + Clerk login (browser only), in a pnpm+Turborepo monorepo (`apps/dashboard`, `packages/types`, `packages/api-client`). Nine pages: Overview (hit-meter + storage/requests/work-saved tiles), Projects, Cache Statistics (one ECharts hit/miss trend), Artifacts (offset-paginated), API Keys (create shows plaintext once / revoke), Team (Clerk), Storage Usage, Settings; Billing stubbed. Deployable via `docker compose` with `NEXT_PUBLIC_API_URL`.
 
 **Dependencies:** Phase 3 (`/api/v1` is the only backend the dashboard talks to — never storage directly).
 
-**Definition of Done:** log in via Clerk, see live stats from `/api/v1`, create + revoke a token from the UI and confirm it works/stops working on the cache path.
+**Definition of Done — met:** ✅ Clerk browser login → JWT is the sole `/api/v1` auth (`useApiClient` bridge; no bare fetch) · ✅ live stats from `/api/v1` on Overview/Statistics/Storage with genuine loading/error/empty states (error names `NEXT_PUBLIC_API_URL`) · ✅ token create shows the plaintext **once** (dialog-local state, wiped on close, never re-fetched/cached), revoke flips status to Revoked · ✅ new thin `GET /api/v1/stats/timeseries` (org-scoped, `parseClampedInt` days, off the cache hot path) feeds the one ECharts trend · ✅ dashboard talks **only** to `/api/v1` (grep-verified: no `/v8`, storage, DB, localStorage) — the two auth worlds stay separate · ✅ snake_case end-to-end (Go tags → `@tcf/types` → components) · ✅ `docker build` succeeds with `NEXT_PUBLIC_*` (incl. Clerk publishable key) baked as build ARGs; `/sign-in` serves. Gated Playwright token-lifecycle e2e authored (login→stats→create→revoke), run on `E2E_CLERK_*` + a live stack. Final whole-branch review (opus): all 6 cross-phase invariants hold, no blocking findings.
 
-**Open questions:** hosting (Cloudflare Pages vs Vercel)? How much charting in v1?
+**First-live-boot check (carried):** Clerk's default session token must carry the org claim the Phase-3 API reads (`OrgFromContext`); if not, add a JWT template — every `/api/v1` call 401s otherwise despite a valid login.
+
+**Follow-ups (non-blocking):** `aria-label` on the Projects create-form inputs; per-row (not global) revoke pending state; `generate_series` gap-fill for silent days in the trend.
 
 ---
 
