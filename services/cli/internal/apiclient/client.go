@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Client is a thin, provisional wrapper over the Phase 3 /api/v1 Management
@@ -19,7 +20,7 @@ type Client struct {
 }
 
 func New(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: http.DefaultClient}
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 30 * time.Second}}
 }
 
 // APIError is returned for any non-2xx /api/v1 response.

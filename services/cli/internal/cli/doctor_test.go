@@ -69,6 +69,23 @@ func TestRunDoctorMalformedURL(t *testing.T) {
 	assertCheck(t, results, "server reachable", false)
 }
 
+func TestRunDoctorReachabilityTrimsTrailingSlash(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gotPath == "" {
+			gotPath = r.URL.Path // capture the first request: the reachability check
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	results := runDoctor(context.Background(), srv.Client(), srv.URL+"/", "any-token")
+	assertCheck(t, results, "server reachable", true)
+	if gotPath != "/v8/artifacts/status" {
+		t.Fatalf("server received path %q, want %q (double slash?)", gotPath, "/v8/artifacts/status")
+	}
+}
+
 func assertCheck(t *testing.T, results []checkResult, name string, wantOK bool) {
 	t.Helper()
 	for _, r := range results {
