@@ -72,6 +72,7 @@ describe("ArtifactsPage", () => {
 
   it("gates clear-all on the typed confirmation phrase", async () => {
     listArtifacts.mockResolvedValueOnce({ limit: 50, offset: 0, artifacts: [art("h", 1, null)] });
+    listArtifacts.mockResolvedValue({ limit: 50, offset: 0, artifacts: [] });
     clearArtifacts.mockResolvedValueOnce({ deleted: 2 });
     wrap(<ArtifactsPage />);
     await userEvent.click(await screen.findByRole("button", { name: /clear all/i }));
@@ -81,5 +82,6 @@ describe("ArtifactsPage", () => {
     expect(confirm).toBeEnabled();
     await userEvent.click(confirm);
     await waitFor(() => expect(clearArtifacts).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText(/no artifacts cached yet/i)).toBeInTheDocument());
   });
 });
