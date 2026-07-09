@@ -15,7 +15,7 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 | 2 | Concurrency & heavy-cache hardening | ✅ **Done** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks on branch `phase-2-hardening`. Load test flat-memory proven, batch endpoint, OTel+Sentry opt-in seams, backlog cleared. |
 | 3 | Management API + OIDC/JWT | ✅ **Done** | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks on branch `phase-3-management-api-oidc`. `/api/v1` (OIDC), usage rollup, cleanup cron, OpenAPI. Live DB + hermetic JWKS verified. |
 | 4 | Dashboard | ✅ **Done** | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks on branch `phase-4-dashboard`. Next.js 15 monorepo, 9 pages, hit-meter signature, thin `/api/v1/stats/timeseries` + ECharts trend, gated Playwright e2e, Docker image. Final whole-branch review: READY TO MERGE, all 6 cross-phase invariants hold. |
-| 5 | CLI (`turbo-cache`) | ⬜ **Next** | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
+| 5 | CLI (`turbo-cache`) | ✅ **Done** | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks on branch `phase-5-cli`. Own Go module, `login` (OIDC device flow) / `token create` / `project create` / `stats` / `doctor`. Stdlib-only HTTP client, compile-time boundary from storage/DB. Final whole-branch review: READY TO MERGE, all 6 cross-phase invariants hold. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 💤 deferred (no near-term work).
@@ -125,15 +125,17 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 
 ---
 
-## Phase 5 — CLI (`turbo-cache`) ⬜ Planned
+## Phase 5 — CLI (`turbo-cache`) ✅ DONE
 
 **Goal:** first-class self-host ergonomics.
 
-**Scope / deliverables:** `login` (OIDC device flow), `token create`, `project create`, `stats`, `doctor` (checks config + connectivity). Thin client over `/api/v1`.
+**Scope / deliverables:** `login` (RFC 8628 OIDC device flow), `token create`, `project create`, `stats`, `doctor` (checks config + connectivity). Thin stdlib-`net/http` client over `/api/v1`, in its OWN Go module (`services/cli`, separate go.mod) — the module boundary makes "never touches storage/DB" a compile-time fact.
 
-**Dependencies:** Phase 3.
+**Dependencies:** Phase 3 (`/api/v1`). The plan's "provisional API shapes" were reconciled against the now-shipped Phase 3/4 endpoints (snake_case `Stats`, `{slug,name}` project body, plaintext-once token).
 
-**Definition of Done:** `turbo-cache doctor` diagnoses a misconfigured self-host; `token create` yields a working `TURBO_TOKEN`.
+**Definition of Done — met:** ✅ `turbo-cache doctor` diagnoses a misconfigured self-host — reports config-file (0600) / API-URL / server-reachable / auth independently, bounded 5s client (can't hang), and reports a malformed API URL as a failed check rather than panicking · ✅ `token create` prints a plaintext `TURBO_TOKEN` shown once and never persisted by the CLI (hermetically verified against `httptest`; the live cache-path PUT/GET is the documented end-to-end check once a real IdP is wired) · ✅ two tokens never confused: OIDC JWT (from `login`) stored 0600 for `/api/v1`, hashed cache token printed once for Turborepo · ✅ config precedence (flag>env>file) resolved once via `config.Pick`/`resolveClient` · ✅ `login` is the only IdP-touching command; every other command talks only to the server · ✅ cross-compiles for linux/darwin/windows × amd64/arm64 (goreleaser + plain `go build`; version ldflags injection proven). Final whole-branch review: all 6 cross-phase invariants hold, no blocking findings.
+
+**Follow-ups (non-blocking, next small PR):** wire `signal.NotifyContext` in `main.go` + make `oidcdevice.PollToken`'s sleep context-aware (Ctrl-C during `login`); `url.JoinPath` in `Discover`; recognize a `TURBO_CACHE_TOKEN` shape mismatch in `doctor`.
 
 ---
 
