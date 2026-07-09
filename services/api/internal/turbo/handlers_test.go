@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
@@ -172,7 +173,7 @@ func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 }
 
 // helper: build a router with an org already injected into context
-func testRouter(store ArtifactStore, repo MetaRepo) http.Handler {
+func testRouter(store ArtifactStore, repo MetaRepo) (http.Handler, *obs.Metrics) {
 	m := obs.NewMetrics()
 	h := NewHandler(store, repo, 1<<20, m)
 	r := chi.NewRouter()
@@ -183,11 +184,11 @@ func testRouter(store ArtifactStore, repo MetaRepo) http.Handler {
 		})
 	})
 	h.Mount(r)
-	return r
+	return r, m
 }
 
 func TestStatus(t *testing.T) {
-	r := testRouter(newMemStore(), &memRepo{})
+	r, _ := testRouter(newMemStore(), &memRepo{})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v8/artifacts/status", nil))
 	if rec.Code != 200 || !bytes.Contains(rec.Body.Bytes(), []byte(`"enabled"`)) {
@@ -197,7 +198,7 @@ func TestStatus(t *testing.T) {
 
 func TestPutThenGetRoundTrip(t *testing.T) {
 	store := newMemStore()
-	r := testRouter(store, &memRepo{})
+	r, m := testRouter(store, &memRepo{})
 	body := []byte("tarball-zst-bytes")
 
 	rec := httptest.NewRecorder()
@@ -205,6 +206,9 @@ func TestPutThenGetRoundTrip(t *testing.T) {
 	r.ServeHTTP(rec, put)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("PUT = %d, want 202", rec.Code)
+	}
+	if got := testutil.ToFloat64(m.UploadBytes); got != float64(len(body)) {
+		t.Fatalf("UploadBytes = %v, want %d", got, len(body))
 	}
 
 	rec = httptest.NewRecorder()
@@ -216,13 +220,28 @@ func TestPutThenGetRoundTrip(t *testing.T) {
 	if !bytes.Equal(rec.Body.Bytes(), body) {
 		t.Fatalf("GET body = %q, want %q", rec.Body.Bytes(), body)
 	}
+	if got := testutil.ToFloat64(m.CacheHit); got != 1 {
+		t.Fatalf("CacheHit = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.CacheMiss); got != 0 {
+		t.Fatalf("CacheMiss = %v, want 0 — this GET was a hit, not a miss", got)
+	}
+	if got := testutil.ToFloat64(m.DownloadBytes); got != float64(len(body)) {
+		t.Fatalf("DownloadBytes = %v, want %d", got, len(body))
+	}
 }
 
 func TestGetMissIs404(t *testing.T) {
-	r := testRouter(newMemStore(), &memRepo{})
+	r, m := testRouter(newMemStore(), &memRepo{})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v8/artifacts/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET miss = %d, want 404", rec.Code)
+	}
+	if got := testutil.ToFloat64(m.CacheMiss); got != 1 {
+		t.Fatalf("CacheMiss = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.CacheHit); got != 0 {
+		t.Fatalf("CacheHit = %v, want 0 — this GET was a miss, not a hit", got)
 	}
 }
