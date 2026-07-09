@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,8 +16,9 @@ import (
 var ErrUnauthorized = errors.New("db: no matching active token")
 
 type Org struct {
-	ID   int64
-	Slug string
+	ID       int64
+	Slug     string
+	IdpOrgID string
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -77,6 +81,248 @@ func (r *Repo) TouchArtifact(ctx context.Context, orgID int64, hash string) (err
 	defer func() { obs.EndSpan(span, err) }()
 
 	const q = `UPDATE cache_artifacts SET last_accessed_at = now() WHERE org_id=$1 AND hash=$2`
+	_, err = r.pool.Exec(ctx, q, orgID, hash)
+	return err
+}
+
+func orgSlugFor(idpOrgID string) string {
+	sum := sha256.Sum256([]byte(idpOrgID))
+	return "org-" + hex.EncodeToString(sum[:6]) // 12 hex chars, matches ^[a-z0-9-]+$
+}
+
+// EnsureOrgByIdpID returns the org for an IdP org id, creating it on first sight.
+// Single upsert keyed on organizations.idp_org_id UNIQUE, so concurrent
+// first-requests from the same org are safe.
+func (r *Repo) EnsureOrgByIdpID(ctx context.Context, idpOrgID, name string) (org *Org, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.EnsureOrgByIdpID")
+	defer func() { obs.EndSpan(span, err) }()
+
+	if name == "" {
+		name = idpOrgID
+	}
+	const q = `INSERT INTO organizations (idp_org_id, slug, name)
+	           VALUES ($1, $2, $3)
+	           ON CONFLICT (idp_org_id) DO UPDATE SET idp_org_id = EXCLUDED.idp_org_id
+	           RETURNING id, slug, idp_org_id`
+	var o Org
+	err = r.pool.QueryRow(ctx, q, idpOrgID, orgSlugFor(idpOrgID), name).
+		Scan(&o.ID, &o.Slug, &o.IdpOrgID)
+	if err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+type APIKey struct {
+	ID         int64
+	Name       string
+	ProjectID  *int64
+	LastUsedAt *time.Time
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+}
+
+// CreateToken stores only the SHA-256 hash (via auth.HashToken upstream);
+// the plaintext token is never persisted or logged.
+func (r *Repo) CreateToken(ctx context.Context, orgID int64, name, tokenHash string) (id int64, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.CreateToken")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `INSERT INTO api_keys (org_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id`
+	err = r.pool.QueryRow(ctx, q, orgID, name, tokenHash).Scan(&id)
+	return id, err
+}
+
+// ListTokens is org-scoped and never selects token_hash.
+func (r *Repo) ListTokens(ctx context.Context, orgID int64) (keys []APIKey, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ListTokens")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT id, name, project_id, last_used_at, created_at, revoked_at
+	           FROM api_keys WHERE org_id = $1 ORDER BY created_at DESC`
+	rows, err := r.pool.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k APIKey
+		if err = rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.LastUsedAt, &k.CreatedAt, &k.RevokedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	err = rows.Err()
+	return keys, err
+}
+
+// RevokeToken sets revoked_at; org-scoped so a token can't revoke another org's key.
+func (r *Repo) RevokeToken(ctx context.Context, orgID, tokenID int64) (ok bool, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.RevokeToken")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `UPDATE api_keys SET revoked_at = now()
+	           WHERE id = $1 AND org_id = $2 AND revoked_at IS NULL`
+	tag, err := r.pool.Exec(ctx, q, tokenID, orgID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+type Project struct {
+	ID        int64
+	Slug      string
+	Name      string
+	CreatedAt time.Time
+}
+
+func (r *Repo) CreateProject(ctx context.Context, orgID int64, slug, name string) (proj Project, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.CreateProject")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `INSERT INTO projects (org_id, slug, name) VALUES ($1, $2, $3)
+	           RETURNING id, slug, name, created_at`
+	err = r.pool.QueryRow(ctx, q, orgID, slug, name).Scan(&proj.ID, &proj.Slug, &proj.Name, &proj.CreatedAt)
+	return proj, err
+}
+
+func (r *Repo) ListProjects(ctx context.Context, orgID int64) (projects []Project, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ListProjects")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT id, slug, name, created_at FROM projects WHERE org_id = $1 ORDER BY name`
+	rows, err := r.pool.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p Project
+		if err = rows.Scan(&p.ID, &p.Slug, &p.Name, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		projects = append(projects, p)
+	}
+	err = rows.Err()
+	return projects, err
+}
+
+type Stats struct {
+	StorageBytes  int64
+	ArtifactCount int64
+	Hits          int64
+	Misses        int64
+	Requests      int64
+	BytesUp       int64
+	BytesDown     int64
+}
+
+func (r *Repo) Stats(ctx context.Context, orgID int64) (s Stats, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.Stats")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q1 = `SELECT COALESCE(SUM(size_bytes),0), COUNT(*) FROM cache_artifacts WHERE org_id=$1`
+	if err = r.pool.QueryRow(ctx, q1, orgID).Scan(&s.StorageBytes, &s.ArtifactCount); err != nil {
+		return s, err
+	}
+	const q2 = `SELECT COALESCE(SUM(hits),0), COALESCE(SUM(misses),0),
+	                   COALESCE(SUM(bytes_up),0), COALESCE(SUM(bytes_down),0)
+	            FROM usage_daily WHERE org_id=$1`
+	if err = r.pool.QueryRow(ctx, q2, orgID).Scan(&s.Hits, &s.Misses, &s.BytesUp, &s.BytesDown); err != nil {
+		return s, err
+	}
+	s.Requests = s.Hits + s.Misses
+	return s, nil
+}
+
+type Artifact struct {
+	Hash           string
+	SizeBytes      int64
+	Tag            *string
+	CreatedAt      time.Time
+	LastAccessedAt time.Time
+}
+
+func (r *Repo) ListArtifacts(ctx context.Context, orgID int64, limit, offset int) (artifacts []Artifact, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ListArtifacts")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
+	           FROM cache_artifacts WHERE org_id=$1
+	           ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+	rows, err := r.pool.Query(ctx, q, orgID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a Artifact
+		if err = rows.Scan(&a.Hash, &a.SizeBytes, &a.Tag, &a.CreatedAt, &a.LastAccessedAt); err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, a)
+	}
+	err = rows.Err()
+	return artifacts, err
+}
+
+// AddUsage accumulates daily usage counters; idempotent within a day via
+// ON CONFLICT accumulation (safe to call multiple times per day).
+func (r *Repo) AddUsage(ctx context.Context, orgID int64, day time.Time, up, down, hits, misses int64) (err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.AddUsage")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `INSERT INTO usage_daily (org_id, day, bytes_up, bytes_down, hits, misses)
+	           VALUES ($1, $2::date, $3, $4, $5, $6)
+	           ON CONFLICT (org_id, day) DO UPDATE SET
+	             bytes_up   = usage_daily.bytes_up   + EXCLUDED.bytes_up,
+	             bytes_down = usage_daily.bytes_down + EXCLUDED.bytes_down,
+	             hits       = usage_daily.hits       + EXCLUDED.hits,
+	             misses     = usage_daily.misses     + EXCLUDED.misses`
+	_, err = r.pool.Exec(ctx, q, orgID, day, up, down, hits, misses)
+	return err
+}
+
+type ExpiredArtifact struct {
+	OrgID   int64
+	OrgSlug string
+	Hash    string
+}
+
+// ExpiredArtifacts is batched (limit) so a huge backlog drains over ticks
+// instead of loading everything at once. Not org-scoped by design: it's a
+// system-wide cron scan, and each row carries its own OrgID/OrgSlug so the
+// caller stays tenant-aware when deleting.
+func (r *Repo) ExpiredArtifacts(ctx context.Context, cutoff time.Time, limit int) (out []ExpiredArtifact, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ExpiredArtifacts")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT a.org_id, o.slug, a.hash
+	           FROM cache_artifacts a JOIN organizations o ON o.id = a.org_id
+	           WHERE a.last_accessed_at < $1
+	           ORDER BY a.last_accessed_at LIMIT $2`
+	rows, err := r.pool.Query(ctx, q, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e ExpiredArtifact
+		if err = rows.Scan(&e.OrgID, &e.OrgSlug, &e.Hash); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	err = rows.Err()
+	return out, err
+}
+
+func (r *Repo) DeleteArtifact(ctx context.Context, orgID int64, hash string) (err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.DeleteArtifact")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `DELETE FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
 	_, err = r.pool.Exec(ctx, q, orgID, hash)
 	return err
 }
