@@ -20,6 +20,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().String("api", "", "management API base URL (overrides TURBO_CACHE_API and the config file)")
 	root.AddCommand(newLoginCmd())
 	root.AddCommand(newTokenCmd())
+	root.AddCommand(newProjectCmd())
 	return root
 }
 
