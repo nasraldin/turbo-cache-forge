@@ -75,7 +75,7 @@ func New(d Deps) http.Handler {
 
 	// Management API (OIDC/JWT) + docs — mounted only when OIDC is configured.
 	if d.Auth != nil && d.Repo != nil {
-		mh := mgmt.NewHandler(d.Repo)
+		mh := mgmt.NewHandler(d.Repo, d.Store)
 		r.Route("/api/v1", func(ar chi.Router) {
 			// public docs
 			ar.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {

@@ -3,14 +3,20 @@ package mgmt
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/artifactview"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/turbo"
 )
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]+$`)
@@ -24,11 +30,20 @@ type Repo interface {
 	Stats(ctx context.Context, orgID int64) (db.Stats, error)
 	StatsSeries(ctx context.Context, orgID int64, days int) ([]db.StatsPoint, error)
 	ListArtifacts(ctx context.Context, orgID int64, limit, offset int) ([]db.Artifact, error)
+	GetArtifact(ctx context.Context, orgID int64, hash string) (db.Artifact, error)
+	ListArtifactHashes(ctx context.Context, orgID int64) ([]string, error)
+	DeleteAllArtifacts(ctx context.Context, orgID int64) (int64, error)
+	DeleteArtifact(ctx context.Context, orgID int64, hash string) error
 }
 
-type Handler struct{ repo Repo }
+type Handler struct {
+	repo  Repo
+	store storage.Storage
+}
 
-func NewHandler(repo Repo) *Handler { return &Handler{repo: repo} }
+func NewHandler(repo Repo, store storage.Storage) *Handler {
+	return &Handler{repo: repo, store: store}
+}
 
 func (h *Handler) Mount(r chi.Router) {
 	r.Post("/tokens", h.createToken)
@@ -39,6 +54,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/stats", h.stats)
 	r.Get("/stats/timeseries", h.statsTimeseries)
 	r.Get("/artifacts", h.listArtifacts)
+	r.Get("/artifacts/{hash}", h.getArtifact)
+	r.Get("/artifacts/{hash}/download", h.downloadArtifact)
+	r.Delete("/artifacts/{hash}", h.deleteArtifact)
+	r.Delete("/artifacts", h.clearArtifacts)
 }
 
 func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +235,115 @@ func (h *Handler) listArtifacts(w http.ResponseWriter, r *http.Request) {
 		arts = []db.Artifact{} // serialize [] not null
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"limit": limit, "offset": offset, "artifacts": arts})
+}
+
+func (h *Handler) getArtifact(w http.ResponseWriter, r *http.Request) {
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	hash := chi.URLParam(r, "hash")
+	if !turbo.ValidHash(hash) {
+		http.Error(w, "bad hash", http.StatusBadRequest)
+		return
+	}
+	a, err := h.repo.GetArtifact(r.Context(), org.ID, hash)
+	if errors.Is(err, db.ErrArtifactNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "get failed", http.StatusInternalServerError)
+		return
+	}
+	// Blob is optional: a row can outlive its blob (cleanup deletes blob first).
+	content := artifactview.Manifest{Format: "opaque", Entries: []artifactview.Entry{}}
+	if rc, _, gerr := h.store.Get(r.Context(), turbo.StorageKey(org.Slug, hash)); gerr == nil {
+		defer rc.Close()
+		content = artifactview.Decode(rc)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"hash": a.Hash, "size_bytes": a.SizeBytes, "tag": a.Tag,
+		"created_at": a.CreatedAt, "last_accessed_at": a.LastAccessedAt,
+		"content": content,
+	})
+}
+
+func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request) {
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	hash := chi.URLParam(r, "hash")
+	if !turbo.ValidHash(hash) {
+		http.Error(w, "bad hash", http.StatusBadRequest)
+		return
+	}
+	rc, info, err := h.store.Get(r.Context(), turbo.StorageKey(org.Slug, hash))
+	if errors.Is(err, storage.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "get failed", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", hash+".tar.zst"))
+	if info != nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(info.Size, 10))
+	}
+	_, _ = io.Copy(w, rc)
+}
+
+func (h *Handler) deleteArtifact(w http.ResponseWriter, r *http.Request) {
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	hash := chi.URLParam(r, "hash")
+	if !turbo.ValidHash(hash) {
+		http.Error(w, "bad hash", http.StatusBadRequest)
+		return
+	}
+	// blob first, then row — mirrors cleanup.RunOnce (avoids orphan blobs).
+	if err := h.store.Delete(r.Context(), turbo.StorageKey(org.Slug, hash)); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	if err := h.repo.DeleteArtifact(r.Context(), org.ID, hash); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) clearArtifacts(w http.ResponseWriter, r *http.Request) {
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	hashes, err := h.repo.ListArtifactHashes(r.Context(), org.ID)
+	if err != nil {
+		http.Error(w, "clear failed", http.StatusInternalServerError)
+		return
+	}
+	for _, hh := range hashes {
+		// Best-effort per blob; a failed blob delete leaves its row for the
+		// cleanup cron, but we still clear the rows below.
+		_ = h.store.Delete(r.Context(), turbo.StorageKey(org.Slug, hh))
+	}
+	n, err := h.repo.DeleteAllArtifacts(r.Context(), org.ID)
+	if err != nil {
+		http.Error(w, "clear failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
 }
 
 // parseClampedInt parses s (empty => def). A present-but-non-numeric value is

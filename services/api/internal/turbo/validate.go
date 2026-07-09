@@ -26,3 +26,7 @@ func validHash(hash string) bool {
 	}
 	return true
 }
+
+// ValidHash exposes the cache-path hash rules to the management API so admin
+// artifact routes reject path-escaping hashes before building a storage key.
+func ValidHash(hash string) bool { return validHash(hash) }
