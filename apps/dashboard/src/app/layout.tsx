@@ -1,8 +1,8 @@
-import { ClerkProvider } from "@clerk/nextjs";
 import { JetBrains_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "./providers";
+import { AuthRoot } from "./session";
 import "./globals.css";
 
 // Design brief: Inter for UI/body, JetBrains Mono (tabular-nums) for all
@@ -18,7 +18,7 @@ export const metadata = { title: "turbo-cache-forge", description: "Remote cache
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <ClerkProvider>
+    <AuthRoot>
       <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
         <body>
           <QueryProvider>
@@ -27,6 +27,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </QueryProvider>
         </body>
       </html>
-    </ClerkProvider>
+    </AuthRoot>
   );
 }
