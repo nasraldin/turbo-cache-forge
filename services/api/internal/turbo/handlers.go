@@ -52,7 +52,11 @@ func (h *Handler) Mount(r chi.Router) {
 }
 
 const (
-	maxBatchHashes    = 1000
+	// ponytail: batchExists issues N serial ArtifactExists queries — fine off
+	// the download hot path at this cap. If a client needs larger batches,
+	// replace the loop with one SELECT hash FROM cache_artifacts WHERE
+	// org_id=$1 AND hash = ANY($2) and build the map from the result set.
+	maxBatchHashes    = 256
 	batchBodyMaxBytes = 1 << 20 // 1 MiB — a hash list never needs an artifact-sized body
 )
 
@@ -130,6 +134,7 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		obs.CaptureError(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
