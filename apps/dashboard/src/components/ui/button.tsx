@@ -4,12 +4,14 @@ import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 // Flat instrument-panel buttons: hairline borders, no heavy shadows.
+// Per design brief accent restraint: teal (--hit) reserved for HIT semantics + primary CTA only.
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-hit text-bg hover:opacity-90",
+        default: "border border-border bg-surface-2 text-text hover:border-border hover:bg-surface",
+        primary: "bg-hit text-bg hover:opacity-90",
         outline: "border border-border bg-transparent text-text hover:bg-surface-2",
         ghost: "text-muted hover:bg-surface-2 hover:text-text",
         destructive: "bg-danger text-white hover:opacity-90",

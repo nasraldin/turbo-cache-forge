@@ -5,7 +5,9 @@ import type { Config } from "tailwindcss";
 // Deliberately NOT the shadcn default HSL token set: the instrument-panel
 // look uses its own hit/miss/danger vocabulary, not primary/secondary.
 const config: Config = {
-  darkMode: ["class", '[data-theme="dark"]'],
+  // Theming is CSS-var based: dark is :root default, light is [data-theme="light"] override.
+  // No dark: utilities used; selector set for future compatibility.
+  darkMode: ["selector", ":root:not([data-theme=\"light\"])"],
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
