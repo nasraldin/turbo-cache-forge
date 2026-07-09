@@ -12,6 +12,6 @@
   "dependencies": { "@tcf/types": "workspace:*" },
   "devDependencies": {
     "typescript": "5.6.3",
-    "vitest": "2.1.2"
+    "vitest": "3.2.6"
   }
 }
