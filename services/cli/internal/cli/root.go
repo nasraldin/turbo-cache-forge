@@ -22,6 +22,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newTokenCmd())
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newStatsCmd())
+	root.AddCommand(newDoctorCmd())
 	return root
 }
 
