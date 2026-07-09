@@ -6,6 +6,11 @@ test.beforeAll(async () => {
 });
 
 test("log in, see live stats, create and revoke a token", async ({ page }) => {
+  test.skip(
+    !process.env.E2E_CLERK_USER || !process.env.E2E_CLERK_PASSWORD,
+    "set E2E_CLERK_USER and E2E_CLERK_PASSWORD (+ a live stack) to run the live e2e",
+  );
+
   await page.goto("/");
   await clerk.signIn({
     page,
@@ -30,8 +35,9 @@ test("log in, see live stats, create and revoke a token", async ({ page }) => {
   expect(secret).toMatch(/^turbo_/);
   await page.getByRole("button", { name: /done/i }).click();
 
-  // It is now listed as Active, then revoke it
-  await expect(page.getByText("e2e-token")).toBeVisible();
-  await page.getByRole("button", { name: /revoke/i }).first().click();
-  await expect(page.getByText("Revoked")).toBeVisible();
+  // It is now listed as Active; revoke THIS token's row (not just any Revoke button)
+  const row = page.getByRole("row", { name: /e2e-token/ });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: /revoke/i }).click();
+  await expect(row.getByText("Revoked")).toBeVisible();
 });
