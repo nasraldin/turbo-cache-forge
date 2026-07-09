@@ -11,7 +11,10 @@ import (
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/mgmt"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/oidcauth"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/openapi"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/turbo"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
@@ -22,6 +25,8 @@ type Deps struct {
 	Store          storage.Storage
 	Repo           *db.Repo
 	MaxUploadBytes int64
+	Usage          *usage.Accumulator
+	Auth           *oidcauth.Authenticator
 }
 
 func New(d Deps) http.Handler {
@@ -47,14 +52,28 @@ func New(d Deps) http.Handler {
 
 	// authenticated Turbo protocol
 	if d.Repo != nil {
-		// ponytail: accumulator constructed here with no rollup ticker wired up
-		// yet — Task 10 wires Run(ctx, acc, d.Repo, interval) into main's
-		// lifecycle and threads this through Deps instead.
-		acc := usage.New()
-		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m, acc)
+		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m, d.Usage)
 		r.Group(func(pr chi.Router) {
 			pr.Use(auth.RequireToken(d.Repo))
 			th.Mount(pr)
+		})
+	}
+
+	// Management API (OIDC/JWT) + docs — mounted only when OIDC is configured.
+	if d.Auth != nil && d.Repo != nil {
+		mh := mgmt.NewHandler(d.Repo)
+		r.Route("/api/v1", func(ar chi.Router) {
+			// public docs
+			ar.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/yaml")
+				_, _ = w.Write(openapi.Spec)
+			})
+			ar.Handle("/docs/*", http.StripPrefix("/api/v1/docs", openapi.Handler()))
+			// authenticated management routes
+			ar.Group(func(pr chi.Router) {
+				pr.Use(d.Auth.Middleware)
+				mh.Mount(pr)
+			})
 		})
 	}
 	return otelhttp.NewHandler(r, "turbo-cache-forge")

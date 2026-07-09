@@ -7,13 +7,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/cleanup"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/config"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/oidcauth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/server"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage/filesystem"
 	s3store "github.com/nasraldin/turbo-cache-forge/services/api/internal/storage/s3"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
 
 func main() {
@@ -60,7 +63,34 @@ func main() {
 	}
 	store = storage.WithTracing(store) // applies to whichever backend was selected above
 
-	srv := server.New(server.Deps{Store: store, Repo: repo, MaxUploadBytes: cfg.MaxUploadBytes})
+	acc := usage.New()
+
+	var authn *oidcauth.Authenticator
+	if cfg.OIDCIssuer != "" {
+		authn, err = oidcauth.New(ctx, oidcauth.Config{
+			Issuer:   cfg.OIDCIssuer,
+			JWKSURL:  cfg.OIDCJWKSURL,
+			Audience: cfg.OIDCAudience,
+			OrgClaim: cfg.OIDCOrgClaim,
+		}, repo)
+		if err != nil {
+			log.Fatalf("oidc init: %v", err)
+		}
+		log.Printf("management API enabled at /api/v1 (issuer=%s)", cfg.OIDCIssuer)
+	}
+
+	// background jobs share a context cancelled on shutdown
+	bg, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go usage.Run(bg, acc, repo, time.Duration(cfg.RollupIntervalSec)*time.Second)
+	go cleanup.Run(bg, repo, store,
+		time.Duration(cfg.RetentionDays)*24*time.Hour,
+		time.Duration(cfg.CleanupIntervalSec)*time.Second)
+
+	srv := server.New(server.Deps{
+		Store: store, Repo: repo, MaxUploadBytes: cfg.MaxUploadBytes,
+		Usage: acc, Auth: authn,
+	})
 	log.Printf("turbo-cache-forge listening on %s (backend=%s)", cfg.Addr, cfg.StorageBackend)
 	if err := http.ListenAndServe(cfg.Addr, srv); err != nil {
 		log.Fatal(err)
