@@ -51,7 +51,8 @@ func TestStatusWriterForwardsReaderFrom(t *testing.T) {
 func TestStatusWriterReadFromFallsBackWithoutReaderFrom(t *testing.T) {
 	rec := httptest.NewRecorder() // *httptest.ResponseRecorder itself has no ReadFrom
 	sw := &statusWriter{ResponseWriter: rec, status: 200}
-	n, err := io.Copy(sw, bytes.NewReader([]byte("x")))
+	src := readerOnly{bytes.NewReader([]byte("x"))}
+	n, err := io.Copy(sw, src)
 	if err != nil || n != 1 || rec.Body.String() != "x" {
 		t.Fatalf("fallback copy = %d, %v, body=%q", n, err, rec.Body.String())
 	}
