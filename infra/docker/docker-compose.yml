@@ -34,6 +34,19 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable
       STORAGE_BACKEND: fs
       STORAGE_PATH: /data
+      # OIDC is off unless OIDC_ISSUER is set (then /api/v1 mounts). OIDC_ORG_ENABLED=false
+      # is personal mode: no Clerk org needed, tenant = user's `sub`, audience check skipped.
+      # Personal mode is only safe when OIDC_ISSUER is DEDICATED to this app — a Clerk
+      # instance/IdP realm shared with other apps would let any of their tokens in.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_ORG_CLAIM: ${OIDC_ORG_CLAIM:-org_id}
+      OIDC_ORG_ENABLED: ${OIDC_ORG_ENABLED:-true}
+      # Browser origins allowed to call /api/v1 (the dashboard). Empty = CORS off.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # How often the in-memory hit/miss counters flush to usage_daily. Default 300s
+      # (prod); lower it locally so dashboard stats update within seconds.
+      USAGE_ROLLUP_INTERVAL_SEC: ${USAGE_ROLLUP_INTERVAL_SEC:-300}
     volumes: ["cache-data:/data"]
     ports: ["8080:8080"]
 
@@ -45,6 +58,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
         # publishable key is public + baked into the client bundle at build time
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk}
+        # false (default) hides <OrganizationSwitcher/>; set true only if Clerk orgs are enabled
+        NEXT_PUBLIC_ORG_ENABLED: ${NEXT_PUBLIC_ORG_ENABLED:-false}
     depends_on:
       cache-api: { condition: service_started }
     environment:

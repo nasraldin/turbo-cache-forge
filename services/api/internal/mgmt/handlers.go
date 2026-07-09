@@ -145,6 +145,9 @@ func (h *Handler) listProjects(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "list failed", http.StatusInternalServerError)
 		return
 	}
+	if ps == nil {
+		ps = []db.Project{} // serialize [] not null
+	}
 	writeJSON(w, http.StatusOK, ps)
 }
 
@@ -208,6 +211,9 @@ func (h *Handler) listArtifacts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "list failed", http.StatusInternalServerError)
 		return
+	}
+	if arts == nil {
+		arts = []db.Artifact{} // serialize [] not null
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"limit": limit, "offset": offset, "artifacts": arts})
 }

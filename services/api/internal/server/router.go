@@ -27,6 +27,7 @@ type Deps struct {
 	MaxUploadBytes int64
 	Usage          *usage.Accumulator
 	Auth           *oidcauth.Authenticator
+	CORSOrigins    []string // browser origins allowed to call /api/v1; empty = CORS off
 }
 
 func New(d Deps) http.Handler {
@@ -35,6 +36,10 @@ func New(d Deps) http.Handler {
 	// inner: catches the panic first as it unwinds, reports to Sentry, then
 	// repanics outward (Repanic: true) for Recoverer above to still handle.
 	r.Use(sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle)
+
+	if len(d.CORSOrigins) > 0 {
+		r.Use(corsMiddleware(d.CORSOrigins)) // before routing so preflight OPTIONS never hits chi's 405
+	}
 
 	m := obs.NewMetrics()
 	r.Use(m.Middleware(func(req *http.Request) string {

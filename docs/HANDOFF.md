@@ -54,14 +54,20 @@ cd services/cli && go build -o /tmp/turbo-cache ./cmd/turbo-cache
 - Cache path `/v8/artifacts/*` works with a hashed bearer token.
 - CLI builds and `doctor` runs against the API.
 
-### The last mile: live `/api/v1` data in the dashboard
-The default compose brings the API up **without** OIDC, so `/api/v1` is not mounted and the dashboard's data calls fail into their error states (by design — safe boot). To get **live** stats/projects/tokens/artifacts in the dashboard, three things must line up (this is the carried "first-live-boot" caveat):
+### Live `/api/v1` data in the dashboard — two modes
 
-1. **Backend OIDC** — set on the `cache-api` service (env): `OIDC_ISSUER=https://loving-toucan-71.clerk.accounts.dev`, `OIDC_AUDIENCE=<your-audience>`, `OIDC_ORG_CLAIM=org_id`. (When `OIDC_ISSUER` is set, `OIDC_AUDIENCE` is required; the API does OIDC discovery at boot — if it can't reach Clerk it will `log.Fatal`, so only enable once reachable.)
-2. **Clerk JWT template** — in the Clerk dashboard, create a JWT template whose `aud` claim equals `OIDC_AUDIENCE`. Clerk auto-includes `org_id`/`org_slug`/`org_role` when the user has an **active organization**, so the user must belong to a Clerk org (the backend JIT-creates its org row on first valid call).
-3. **Dashboard token** — `apps/dashboard/src/app/api.ts` currently calls `getToken()` (default session token, which has no matching `aud`). Change it to `getToken({ template: "<your-template>" })` so the audience/claims match what the backend verifies.
+The default compose still brings the API up **without** OIDC (`OIDC_ISSUER` unset → `/api/v1` not mounted → dashboard data calls fall into their error states, by design/safe boot). Setting `OIDC_ISSUER` mounts `/api/v1`. There are now two ways to get **live** stats/projects/tokens/artifacts, chosen by `OIDC_ORG_ENABLED`:
 
-Until all three are in place, the API rejects the default session token (audience fails closed → 401) and the dashboard shows its error state. This is a small, well-scoped task — happy to implement the dashboard side and wire the compose OIDC env on request.
+**Personal mode — `OIDC_ORG_ENABLED=false` (current local default in `infra/docker/.env`).** No Clerk organization, no JWT template, no dashboard code change. The backend accepts the **default Clerk session token** (`getToken()`), derives the tenant from the user's `sub` claim, and JIT-provisions a per-user org. The audience check is skipped, so `OIDC_AUDIENCE` is not required. Only two env vars:
+```
+OIDC_ISSUER=https://loving-toucan-71.clerk.accounts.dev
+OIDC_ORG_ENABLED=false
+```
+⚠️ **Safe only when `OIDC_ISSUER` is dedicated to this app.** Skipping `aud` means any validly-signed token from that issuer is accepted — a Clerk instance / IdP realm shared with other apps would let their tokens in too. For a single-tenant self-host (one Clerk instance = one app) this holds. The boot log restates this every startup.
+
+**Org mode — `OIDC_ORG_ENABLED=true` (default; multi-tenant).** Strict: the token must carry a matching `aud` and an `org_id` claim. Needs (1) `OIDC_AUDIENCE=<your-audience>` on `cache-api`; (2) a Clerk **JWT template** whose `aud` equals it, with the user in an active Clerk org (Clerk then includes `org_id`); (3) `apps/dashboard/src/app/api.ts` calling `getToken({ template: "<your-template>" })` instead of `getToken()`.
+
+Either way the API does OIDC discovery at boot — if it can't reach the issuer it will `log.Fatal`, so only set `OIDC_ISSUER` once reachable (verified: `…/.well-known/openid-configuration` returns 200 and `iss` matches).
 
 ## Non-blocking follow-ups (from the Phase 4 & 5 final reviews)
 

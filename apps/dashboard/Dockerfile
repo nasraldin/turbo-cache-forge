@@ -16,8 +16,11 @@ COPY apps/dashboard ./apps/dashboard
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
 # valid-FORMAT throwaway so the build's Clerk key-format check passes; override with the real (public) key.
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+# false (default) = personal mode: hide <OrganizationSwitcher/> (Clerk orgs disabled).
+ARG NEXT_PUBLIC_ORG_ENABLED=false
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_ORG_ENABLED=$NEXT_PUBLIC_ORG_ENABLED
 RUN pnpm --filter dashboard build
 
 FROM node:20-slim AS run
