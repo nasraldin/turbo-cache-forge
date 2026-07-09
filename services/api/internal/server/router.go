@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
@@ -47,7 +48,7 @@ func New(d Deps) http.Handler {
 			th.Mount(pr)
 		})
 	}
-	return r
+	return otelhttp.NewHandler(r, "turbo-cache-forge")
 }
 
 func readyHandler(d Deps) http.HandlerFunc {

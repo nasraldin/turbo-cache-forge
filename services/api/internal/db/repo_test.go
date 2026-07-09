@@ -5,6 +5,11 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // Set TEST_DATABASE_URL (points at a migrated test DB) to run these.
@@ -51,5 +56,26 @@ func TestTokenLookupAndArtifactUpsert(t *testing.T) {
 	ok, err := r.ArtifactExists(ctx, orgID, "h1")
 	if err != nil || !ok {
 		t.Fatalf("ArtifactExists = %v, %v", ok, err)
+	}
+}
+
+func TestRepoMethodsEmitSpans(t *testing.T) {
+	r := testRepo(t)
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(noop.NewTracerProvider()) })
+
+	_ = r.Ping(context.Background())
+	_, _ = r.OrgByTokenHash(context.Background(), "nonexistent")
+
+	var sawOrgLookup bool
+	for _, s := range exp.GetSpans() {
+		if s.Name == "db.OrgByTokenHash" {
+			sawOrgLookup = true
+		}
+	}
+	if !sawOrgLookup {
+		t.Fatal("expected a db.OrgByTokenHash span")
 	}
 }
