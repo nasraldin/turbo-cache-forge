@@ -36,6 +36,7 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 - **Streaming only** — never buffer a whole artifact in memory (`io.Copy` / `manager.Uploader`). The only `io.ReadAll` of a body is in test fakes.
 - **DB off the download hot path** — `last_accessed` and similar are fire-and-forget on a *detached* context; a slow DB never slows a cache hit.
 - **Two auth worlds, never mixed** — the CLI cache path is hashed-bearer-token only and imports NO auth-vendor SDK. OIDC/JWT (Phase 3) is for dashboard humans only.
+- **Built-in auth provider** — `AUTH_MODE=builtin` runs a single root user (username/password → first-party HS256 JWT) as an alternative to OIDC. It upholds "two auth worlds": `internal/localauth` mounts only on `/api/v1`; the cache path never imports it. Exclusive with `oidc`.
 - **Tokens stored only as SHA-256 hex** — plaintext shown once at creation, never logged.
 - **Tenant isolation is layered** — `org_slug/hash` key + `validHash` boundary check + DB `CHECK(slug ~ '^[a-z0-9-]+$')` + `UNIQUE(org_id, hash)`. Any new key-building path must validate both sides.
 - **One metrics pipeline** — Prometheus. OTel is tracing-only, a no-op unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
