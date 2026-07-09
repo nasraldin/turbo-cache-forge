@@ -9,6 +9,23 @@ import { formatBytes } from "@/lib/format";
 export default function StoragePage() {
   const api = useApiClient();
   const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.getStats() });
+  const { isError } = stats;
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Storage Usage" description="Object storage consumed by cached artifacts." />
+        <p
+          role="alert"
+          className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+        >
+          Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running
+          turbo-cache-forge.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader title="Storage Usage" description="Object storage consumed by cached artifacts." />

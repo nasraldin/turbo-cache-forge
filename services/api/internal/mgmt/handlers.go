@@ -172,17 +172,10 @@ func (h *Handler) statsTimeseries(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no org", http.StatusUnauthorized)
 		return
 	}
-	days := 30
-	if v := r.URL.Query().Get("days"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			days = n
-		}
-	}
-	if days < 1 {
-		days = 1
-	}
-	if days > 365 {
-		days = 365
+	days, err := parseClampedInt(r.URL.Query().Get("days"), 30, 1, 365)
+	if err != nil {
+		http.Error(w, "invalid days", http.StatusBadRequest)
+		return
 	}
 	pts, err := h.repo.StatsSeries(r.Context(), org.ID, days)
 	if err != nil {

@@ -203,6 +203,13 @@ func TestStatsTimeseries(t *testing.T) {
 	if rec.Code != http.StatusOK || repo.seriesDaysGot != 1 {
 		t.Fatalf("clamp negative days = %d (code %d), want 1", repo.seriesDaysGot, rec.Code)
 	}
+
+	// non-numeric days is rejected outright rather than silently defaulted
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats/timeseries?days=abc", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad days = %d, want 400", rec.Code)
+	}
 }
 
 func TestListArtifactsClampsAndDefaults(t *testing.T) {
