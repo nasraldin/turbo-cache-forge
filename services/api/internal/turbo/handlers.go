@@ -92,11 +92,13 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "artifact too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		obs.CaptureError(err)
 		http.Error(w, "upload failed", http.StatusInternalServerError)
 		return
 	}
 	info, err := h.store.Head(r.Context(), key)
 	if err != nil {
+		obs.CaptureError(err)
 		http.Error(w, "upload verify failed", http.StatusInternalServerError)
 		return
 	}
@@ -105,8 +107,10 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		// Best-effort compensating delete — see Task 5's Decision note in the
 		// Phase 2 plan for why this is eager rather than a repair-sweep TODO.
 		if delErr := h.store.Delete(r.Context(), key); delErr != nil {
+			obs.CaptureError(delErr)
 			log.Printf("turbo: put %s: compensating delete after metadata failure also failed: %v", key, delErr)
 		}
+		obs.CaptureError(err)
 		http.Error(w, "metadata write failed", http.StatusInternalServerError)
 		return
 	}
@@ -130,6 +134,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		obs.CaptureError(err)
 		http.Error(w, "download failed", http.StatusInternalServerError)
 		return
 	}

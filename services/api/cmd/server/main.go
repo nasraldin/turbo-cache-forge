@@ -33,6 +33,12 @@ func main() {
 		_ = shutdownTracer(shutCtx)
 	}()
 
+	flushSentry, err := obs.InitSentry()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer flushSentry()
+
 	repo, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
