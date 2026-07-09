@@ -17,6 +17,10 @@ import { usePathname } from "next/navigation";
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
+// Mirrors the backend OIDC_ORG_ENABLED. Off by default: in personal mode Clerk
+// has organizations disabled, and <OrganizationSwitcher/> hard-throws when rendered.
+const orgEnabled = process.env.NEXT_PUBLIC_ORG_ENABLED === "true";
+
 const nav: { href: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { href: "/", label: "Overview", icon: Gauge },
   { href: "/projects", label: "Projects", icon: FolderGit2 },
@@ -40,7 +44,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <span className="text-lg font-semibold tracking-tight text-text">turbo-cache-forge</span>
         </Link>
 
-        <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/" />
+        {orgEnabled && <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/" />}
 
         <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
           {nav.map((item) => {

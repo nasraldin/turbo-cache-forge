@@ -51,3 +51,29 @@ func TestLoadOIDCRequiresAudience(t *testing.T) {
 		t.Fatal("expected error: OIDC_AUDIENCE required when OIDC_ISSUER set")
 	}
 }
+
+func TestLoadOrgEnabledDefaultsTrue(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.OIDCOrgEnabled {
+		t.Error("OIDCOrgEnabled default = false, want true")
+	}
+}
+
+// Personal mode (OIDC_ORG_ENABLED=false) lifts the audience requirement.
+func TestLoadPersonalModeNoAudience(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("OIDC_ISSUER", "https://issuer.example")
+	t.Setenv("OIDC_AUDIENCE", "")
+	t.Setenv("OIDC_ORG_ENABLED", "false")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("personal mode should not require OIDC_AUDIENCE: %v", err)
+	}
+	if c.OIDCOrgEnabled {
+		t.Error("OIDCOrgEnabled = true, want false")
+	}
+}

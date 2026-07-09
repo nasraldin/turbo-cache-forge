@@ -84,7 +84,14 @@ func (h *harness) mint(t *testing.T, iss, aud string, exp time.Time, extra map[s
 func (h *harness) authenticator(repo OrgProvisioner) *Authenticator {
 	keySet := oidc.NewRemoteKeySet(context.Background(), h.jwksSrv.URL)
 	verifier := oidc.NewVerifier(testIssuer, keySet, &oidc.Config{ClientID: testAud})
-	return &Authenticator{verifier: verifier, orgClaim: "org_id", repo: repo}
+	return &Authenticator{verifier: verifier, orgClaim: "org_id", orgEnabled: true, repo: repo}
+}
+
+// personalAuthenticator mirrors New(OrgEnabled:false): audience check skipped, tenant from `sub`.
+func (h *harness) personalAuthenticator(repo OrgProvisioner) *Authenticator {
+	keySet := oidc.NewRemoteKeySet(context.Background(), h.jwksSrv.URL)
+	verifier := oidc.NewVerifier(testIssuer, keySet, &oidc.Config{SkipClientIDCheck: true})
+	return &Authenticator{verifier: verifier, orgClaim: "org_id", orgEnabled: false, repo: repo}
 }
 
 func TestMiddlewareTable(t *testing.T) {
@@ -147,6 +154,43 @@ func TestJITProvisioning(t *testing.T) {
 	}
 	if prov.lastIdp != "brand-new-org" {
 		t.Fatalf("EnsureOrgByIdpID called with %q, want brand-new-org", prov.lastIdp)
+	}
+}
+
+// TestPersonalMode covers the OIDC_ORG_ENABLED=false path: a default session token
+// with no `aud` and no org claim is accepted, and the tenant is keyed off `sub`.
+func TestPersonalMode(t *testing.T) {
+	h := newHarness(t)
+	prov := &fakeProvisioner{}
+	a := h.personalAuthenticator(prov)
+	future := time.Now().Add(time.Hour)
+
+	// no audience, no org_id — the shape of a default Clerk session token
+	tok := h.mint(t, testIssuer, "", future, map[string]any{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("personal-mode token = %d, want 200", rec.Code)
+	}
+	if prov.lastIdp != "user-1" { // tenant derived from `sub`
+		t.Fatalf("tenant = %q, want user-1 (sub)", prov.lastIdp)
+	}
+
+	// issuer and expiry are still enforced in personal mode
+	expired := h.mint(t, testIssuer, "", time.Now().Add(-time.Hour), map[string]any{})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	req.Header.Set("Authorization", "Bearer "+expired)
+	a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired personal-mode token = %d, want 401", rec.Code)
 	}
 }
 

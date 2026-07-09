@@ -18,7 +18,7 @@ export function DataTable<T>({
   rows: T[];
   empty: string;
 }) {
-  if (rows.length === 0) {
+  if (!rows || rows.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted">
         {empty}

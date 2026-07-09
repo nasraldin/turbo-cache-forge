@@ -15,10 +15,11 @@ import (
 )
 
 type Config struct {
-	Issuer   string
-	JWKSURL  string
-	Audience string
-	OrgClaim string // JWT claim holding the IdP org id; default "org_id"
+	Issuer     string
+	JWKSURL    string
+	Audience   string
+	OrgClaim   string // JWT claim holding the IdP org id; default "org_id"
+	OrgEnabled bool   // false = personal mode: tenant derived from `sub`, audience check skipped
 }
 
 type OrgProvisioner interface {
@@ -26,9 +27,10 @@ type OrgProvisioner interface {
 }
 
 type Authenticator struct {
-	verifier *oidc.IDTokenVerifier
-	orgClaim string
-	repo     OrgProvisioner
+	verifier   *oidc.IDTokenVerifier
+	orgClaim   string
+	orgEnabled bool
+	repo       OrgProvisioner
 }
 
 func New(ctx context.Context, cfg Config, repo OrgProvisioner) (*Authenticator, error) {
@@ -37,7 +39,10 @@ func New(ctx context.Context, cfg Config, repo OrgProvisioner) (*Authenticator, 
 		orgClaim = "org_id"
 	}
 	var verifier *oidc.IDTokenVerifier
-	oc := &oidc.Config{ClientID: cfg.Audience} // enforces audience; signature+expiry+issuer are default-on
+	// Org mode pins the audience (multi-tenant IdP). Personal mode is a single-tenant
+	// self-host that trusts its own issuer, so it skips the audience check — the default
+	// Clerk session token carries no matching `aud`.
+	oc := &oidc.Config{ClientID: cfg.Audience, SkipClientIDCheck: !cfg.OrgEnabled} // signature+expiry+issuer stay default-on
 	if cfg.JWKSURL != "" {
 		keySet := oidc.NewRemoteKeySet(ctx, cfg.JWKSURL)
 		verifier = oidc.NewVerifier(cfg.Issuer, keySet, oc)
@@ -48,7 +53,7 @@ func New(ctx context.Context, cfg Config, repo OrgProvisioner) (*Authenticator, 
 		}
 		verifier = provider.VerifierContext(ctx, oc)
 	}
-	return &Authenticator{verifier: verifier, orgClaim: orgClaim, repo: repo}, nil
+	return &Authenticator{verifier: verifier, orgClaim: orgClaim, orgEnabled: cfg.OrgEnabled, repo: repo}, nil
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -68,12 +73,19 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, "invalid claims", http.StatusUnauthorized)
 			return
 		}
-		idpOrg, _ := claims[a.orgClaim].(string)
+		// Org mode: tenant = the IdP org. Personal mode: tenant = the user (`sub`),
+		// so each self-host user is their own single-tenant org.
+		var idpOrg, name string
+		if a.orgEnabled {
+			idpOrg, _ = claims[a.orgClaim].(string)
+			name, _ = claims["org_name"].(string) // best-effort display name; falls back to idp id
+		} else {
+			idpOrg, _ = claims["sub"].(string)
+		}
 		if idpOrg == "" {
-			http.Error(w, "missing org claim", http.StatusUnauthorized)
+			http.Error(w, "missing tenant claim", http.StatusUnauthorized)
 			return
 		}
-		name, _ := claims["org_name"].(string) // best-effort display name; falls back to idp id
 		org, err := a.repo.EnsureOrgByIdpID(r.Context(), idpOrg, name)
 		if err != nil {
 			http.Error(w, "org provisioning failed", http.StatusInternalServerError)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -19,6 +20,8 @@ type Config struct {
 	OIDCJWKSURL        string
 	OIDCAudience       string
 	OIDCOrgClaim       string
+	OIDCOrgEnabled     bool     // false = personal/single-tenant mode (tenant from `sub`, audience check skipped)
+	CORSAllowedOrigins []string // browser origins allowed to call /api/v1; empty = CORS off
 	RetentionDays      int
 	RollupIntervalSec  int
 	CleanupIntervalSec int
@@ -47,12 +50,16 @@ func Load() (Config, error) {
 	c.OIDCJWKSURL = os.Getenv("OIDC_JWKS_URL")
 	c.OIDCAudience = os.Getenv("OIDC_AUDIENCE")
 	c.OIDCOrgClaim = env("OIDC_ORG_CLAIM", "org_id")
+	c.OIDCOrgEnabled = envBool("OIDC_ORG_ENABLED", true)
+	c.CORSAllowedOrigins = csv(os.Getenv("CORS_ALLOWED_ORIGINS")) // e.g. "http://localhost:3000"
 	c.RetentionDays = int(envInt("RETENTION_DAYS", 30))
 	c.RollupIntervalSec = int(envInt("USAGE_ROLLUP_INTERVAL_SEC", 300))
 	c.CleanupIntervalSec = int(envInt("CLEANUP_INTERVAL_SEC", 3600))
 
-	if c.OIDCIssuer != "" && c.OIDCAudience == "" {
-		return c, fmt.Errorf("OIDC_AUDIENCE is required when OIDC_ISSUER is set")
+	// Audience only pins a tenant when orgs are on. In personal mode the tenant
+	// is the user's `sub`, so a self-host trusting its own issuer needs no audience.
+	if c.OIDCIssuer != "" && c.OIDCOrgEnabled && c.OIDCAudience == "" {
+		return c, fmt.Errorf("OIDC_AUDIENCE is required when OIDC_ISSUER is set (unless OIDC_ORG_ENABLED=false)")
 	}
 
 	return c, nil
@@ -69,6 +76,26 @@ func envInt(k string, def int64) int64 {
 	if v := os.Getenv(k); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
+		}
+	}
+	return def
+}
+
+// csv splits a comma-separated env value, trimming blanks. "" -> nil.
+func csv(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func envBool(k string, def bool) bool {
+	if v := os.Getenv(k); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def

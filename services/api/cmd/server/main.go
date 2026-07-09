@@ -68,15 +68,21 @@ func main() {
 	var authn *oidcauth.Authenticator
 	if cfg.OIDCIssuer != "" {
 		authn, err = oidcauth.New(ctx, oidcauth.Config{
-			Issuer:   cfg.OIDCIssuer,
-			JWKSURL:  cfg.OIDCJWKSURL,
-			Audience: cfg.OIDCAudience,
-			OrgClaim: cfg.OIDCOrgClaim,
+			Issuer:     cfg.OIDCIssuer,
+			JWKSURL:    cfg.OIDCJWKSURL,
+			Audience:   cfg.OIDCAudience,
+			OrgClaim:   cfg.OIDCOrgClaim,
+			OrgEnabled: cfg.OIDCOrgEnabled,
 		}, repo)
 		if err != nil {
 			log.Fatalf("oidc init: %v", err)
 		}
-		log.Printf("management API enabled at /api/v1 (issuer=%s)", cfg.OIDCIssuer)
+		if cfg.OIDCOrgEnabled {
+			log.Printf("management API enabled at /api/v1 (issuer=%s)", cfg.OIDCIssuer)
+		} else {
+			log.Printf("management API enabled at /api/v1 (issuer=%s) — PERSONAL MODE: audience check skipped, tenant=sub. "+
+				"Only safe when OIDC_ISSUER is dedicated to this app; a shared multi-app issuer lets any of its tokens in.", cfg.OIDCIssuer)
+		}
 	}
 
 	// background jobs share a context cancelled on shutdown
@@ -89,7 +95,7 @@ func main() {
 
 	srv := server.New(server.Deps{
 		Store: store, Repo: repo, MaxUploadBytes: cfg.MaxUploadBytes,
-		Usage: acc, Auth: authn,
+		Usage: acc, Auth: authn, CORSOrigins: cfg.CORSAllowedOrigins,
 	})
 	log.Printf("turbo-cache-forge listening on %s (backend=%s)", cfg.Addr, cfg.StorageBackend)
 	if err := http.ListenAndServe(cfg.Addr, srv); err != nil {

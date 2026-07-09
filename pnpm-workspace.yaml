@@ -1,3 +1,4 @@
 packages:
   - "apps/*"
+  - "!apps/example" # self-contained demo monorepo with its own workspace; run it on its own
   - "packages/*"
