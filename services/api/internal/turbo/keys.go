@@ -1,4 +1,4 @@
 package turbo
 
-// storageKey namespaces artifacts by org so tenants never collide.
-func storageKey(orgSlug, hash string) string { return orgSlug + "/" + hash }
+// StorageKey namespaces artifacts by org so tenants never collide.
+func StorageKey(orgSlug, hash string) string { return orgSlug + "/" + hash }

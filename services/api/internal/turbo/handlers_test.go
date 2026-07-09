@@ -20,6 +20,7 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
 
 // in-memory fakes
@@ -120,7 +121,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("HEAD/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m)
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
 			rec := httptest.NewRecorder()
 			h.head(rec, requestWithHash(http.MethodHead, hash))
 			if rec.Code != http.StatusBadRequest {
@@ -134,7 +135,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("PUT/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m)
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
 			rec := httptest.NewRecorder()
 			req := requestWithHash(http.MethodPut, hash)
 			req.Body = io.NopCloser(bytes.NewReader([]byte("payload")))
@@ -150,7 +151,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("GET/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m)
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
 			rec := httptest.NewRecorder()
 			h.get(rec, requestWithHash(http.MethodGet, hash))
 			if rec.Code != http.StatusBadRequest {
@@ -166,7 +167,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 	store := newSpyStore()
 	m := obs.NewMetrics()
-	h := NewHandler(store, &memRepo{}, 1<<20, m)
+	h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
 
 	rec := httptest.NewRecorder()
 	req := requestWithHash(http.MethodPut, "a1b2c3d4e5f6")
@@ -189,7 +190,7 @@ func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 // helper: build a router with an org already injected into context
 func testRouter(store ArtifactStore, repo MetaRepo) (http.Handler, *obs.Metrics) {
 	m := obs.NewMetrics()
-	h := NewHandler(store, repo, 1<<20, m)
+	h := NewHandler(store, repo, 1<<20, m, usage.New())
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -254,7 +255,7 @@ func (f *failingUpsertRepo) UpsertArtifact(context.Context, int64, string, int64
 func TestPutCompensatesStorageWhenMetadataWriteFails(t *testing.T) {
 	store := newSpyStore()
 	m := obs.NewMetrics()
-	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m)
+	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m, usage.New())
 
 	rec := httptest.NewRecorder()
 	req := requestWithHash(http.MethodPut, "a1b2c3")

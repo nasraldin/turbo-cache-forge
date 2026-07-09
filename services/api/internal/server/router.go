@@ -14,6 +14,7 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/turbo"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
 
 // Deps holds everything the router needs. Fields are added as tasks land.
@@ -46,7 +47,11 @@ func New(d Deps) http.Handler {
 
 	// authenticated Turbo protocol
 	if d.Repo != nil {
-		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m)
+		// ponytail: accumulator constructed here with no rollup ticker wired up
+		// yet — Task 10 wires Run(ctx, acc, d.Repo, interval) into main's
+		// lifecycle and threads this through Deps instead.
+		acc := usage.New()
+		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m, acc)
 		r.Group(func(pr chi.Router) {
 			pr.Use(auth.RequireToken(d.Repo))
 			th.Mount(pr)

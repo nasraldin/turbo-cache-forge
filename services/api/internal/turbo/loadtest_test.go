@@ -21,6 +21,7 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage/filesystem"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
 
 func newLoadTestServer(t *testing.T, maxBytes int64) (*httptest.Server, string) {
@@ -28,7 +29,7 @@ func newLoadTestServer(t *testing.T, maxBytes int64) (*httptest.Server, string) 
 	dir := t.TempDir()
 	store := filesystem.New(dir)
 	m := obs.NewMetrics()
-	h := NewHandler(store, &memRepo{}, maxBytes, m)
+	h := NewHandler(store, &memRepo{}, maxBytes, m, usage.New())
 
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
