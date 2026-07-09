@@ -257,11 +257,20 @@ func (h *Handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "get failed", http.StatusInternalServerError)
 		return
 	}
-	// Blob is optional: a row can outlive its blob (cleanup deletes blob first).
+	// Blob is optional: a row can outlive its blob (cleanup deletes blob first),
+	// which degrades to an opaque/empty manifest. A real storage failure, though,
+	// must surface as 500 — not masquerade as "encrypted/opaque" content.
 	content := artifactview.Manifest{Format: "opaque", Entries: []artifactview.Entry{}}
-	if rc, _, gerr := h.store.Get(r.Context(), turbo.StorageKey(org.Slug, hash)); gerr == nil {
+	rc, _, gerr := h.store.Get(r.Context(), turbo.StorageKey(org.Slug, hash))
+	switch {
+	case gerr == nil:
 		defer rc.Close()
 		content = artifactview.Decode(rc)
+	case errors.Is(gerr, storage.ErrNotFound):
+		// row present, blob gone — leave the opaque/empty default
+	default:
+		http.Error(w, "get failed", http.StatusInternalServerError)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"hash": a.Hash, "size_bytes": a.SizeBytes, "tag": a.Tag,
