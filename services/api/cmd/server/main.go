@@ -5,9 +5,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/config"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/server"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage/filesystem"
@@ -20,6 +22,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	shutdownTracer, err := obs.InitTracer(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracer(shutCtx)
+	}()
+
+	flushSentry, err := obs.InitSentry()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer flushSentry()
+
 	repo, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
@@ -39,6 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	store = storage.WithTracing(store) // applies to whichever backend was selected above
 
 	srv := server.New(server.Deps{Store: store, Repo: repo, MaxUploadBytes: cfg.MaxUploadBytes})
 	log.Printf("turbo-cache-forge listening on %s (backend=%s)", cfg.Addr, cfg.StorageBackend)

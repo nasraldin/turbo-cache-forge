@@ -13,8 +13,7 @@ RUN mkdir -p /data && chown -R 65532:65532 /data
 # Self-contained goose image for the compose "migrate" step — no external
 # goose image required (ghcr.io/pressly/goose does not reliably resolve).
 FROM golang:1.25 AS goose
-ENV GOTOOLCHAIN=auto
-RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.2
 COPY infra/migrations /migrations
 ENTRYPOINT ["goose"]
 

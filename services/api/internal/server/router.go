@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
@@ -23,7 +25,10 @@ type Deps struct {
 
 func New(d Deps) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Recoverer)
+	r.Use(middleware.Recoverer) // outer: always produces the actual 500 response
+	// inner: catches the panic first as it unwinds, reports to Sentry, then
+	// repanics outward (Repanic: true) for Recoverer above to still handle.
+	r.Use(sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle)
 
 	m := obs.NewMetrics()
 	r.Use(m.Middleware(func(req *http.Request) string {
@@ -47,7 +52,7 @@ func New(d Deps) http.Handler {
 			th.Mount(pr)
 		})
 	}
-	return r
+	return otelhttp.NewHandler(r, "turbo-cache-forge")
 }
 
 func readyHandler(d Deps) http.HandlerFunc {

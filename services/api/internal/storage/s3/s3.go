@@ -24,12 +24,23 @@ type Store struct {
 	uploader *manager.Uploader
 }
 
+// credentialOptions returns a static-credentials load option only when at
+// least one key is non-empty. When both are empty, New falls back to the
+// SDK's default credential chain (env vars, shared config, EC2/ECS IAM
+// role) — required for AWS deployments that don't hand out static keys.
+func credentialOptions(accessKey, secretKey string) []func(*awscfg.LoadOptions) error {
+	if accessKey == "" && secretKey == "" {
+		return nil
+	}
+	return []func(*awscfg.LoadOptions) error{
+		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	}
+}
+
 func New(ctx context.Context, cfg Config) (*Store, error) {
-	loaded, err := awscfg.LoadDefaultConfig(ctx,
-		awscfg.WithRegion(cfg.Region),
-		awscfg.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")),
-	)
+	opts := append([]func(*awscfg.LoadOptions) error{awscfg.WithRegion(cfg.Region)},
+		credentialOptions(cfg.AccessKey, cfg.SecretKey)...)
+	loaded, err := awscfg.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +51,13 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		}
 	})
 	return &Store{bucket: cfg.Bucket, client: client, uploader: manager.NewUploader(client)}, nil
+}
+
+func contentLength(cl *int64) int64 {
+	if cl == nil {
+		return 0
+	}
+	return *cl
 }
 
 func (s *Store) Put(ctx context.Context, key string, r io.Reader) error {
@@ -57,10 +75,7 @@ func (s *Store) Get(ctx context.Context, key string) (io.ReadCloser, *storage.Ob
 	if err != nil {
 		return nil, nil, err
 	}
-	var size int64
-	if out.ContentLength != nil {
-		size = *out.ContentLength
-	}
+	size := contentLength(out.ContentLength)
 	return out.Body, &storage.ObjectInfo{Size: size}, nil
 }
 
@@ -72,10 +87,7 @@ func (s *Store) Head(ctx context.Context, key string) (*storage.ObjectInfo, erro
 	if err != nil {
 		return nil, err
 	}
-	var size int64
-	if out.ContentLength != nil {
-		size = *out.ContentLength
-	}
+	size := contentLength(out.ContentLength)
 	return &storage.ObjectInfo{Size: size}, nil
 }
 

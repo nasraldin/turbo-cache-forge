@@ -3,13 +3,18 @@ package turbo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
@@ -49,6 +54,12 @@ func (m *memStore) Head(_ context.Context, key string) (*storage.ObjectInfo, err
 	}
 	return &storage.ObjectInfo{Size: int64(len(b))}, nil
 }
+func (m *memStore) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	delete(m.data, key)
+	m.mu.Unlock()
+	return nil
+}
 
 type memRepo struct{ exists bool }
 
@@ -60,7 +71,7 @@ func (m *memRepo) TouchArtifact(context.Context, int64, string) error           
 // tests can prove a rejected request never reached the backend.
 type spyStore struct {
 	*memStore
-	headCalled, putCalled, getCalled bool
+	headCalled, putCalled, getCalled, deleteCalled bool
 }
 
 func newSpyStore() *spyStore { return &spyStore{memStore: newMemStore()} }
@@ -75,6 +86,10 @@ func (s *spyStore) Put(ctx context.Context, key string, r io.Reader) error {
 func (s *spyStore) Get(ctx context.Context, key string) (io.ReadCloser, *storage.ObjectInfo, error) {
 	s.getCalled = true
 	return s.memStore.Get(ctx, key)
+}
+func (s *spyStore) Delete(ctx context.Context, key string) error {
+	s.deleteCalled = true
+	return s.memStore.Delete(ctx, key)
 }
 
 // requestWithHash builds a request carrying an arbitrary (possibly hostile)
@@ -172,7 +187,7 @@ func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 }
 
 // helper: build a router with an org already injected into context
-func testRouter(store ArtifactStore, repo MetaRepo) http.Handler {
+func testRouter(store ArtifactStore, repo MetaRepo) (http.Handler, *obs.Metrics) {
 	m := obs.NewMetrics()
 	h := NewHandler(store, repo, 1<<20, m)
 	r := chi.NewRouter()
@@ -183,11 +198,11 @@ func testRouter(store ArtifactStore, repo MetaRepo) http.Handler {
 		})
 	})
 	h.Mount(r)
-	return r
+	return r, m
 }
 
 func TestStatus(t *testing.T) {
-	r := testRouter(newMemStore(), &memRepo{})
+	r, _ := testRouter(newMemStore(), &memRepo{})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v8/artifacts/status", nil))
 	if rec.Code != 200 || !bytes.Contains(rec.Body.Bytes(), []byte(`"enabled"`)) {
@@ -197,7 +212,7 @@ func TestStatus(t *testing.T) {
 
 func TestPutThenGetRoundTrip(t *testing.T) {
 	store := newMemStore()
-	r := testRouter(store, &memRepo{})
+	r, m := testRouter(store, &memRepo{})
 	body := []byte("tarball-zst-bytes")
 
 	rec := httptest.NewRecorder()
@@ -205,6 +220,9 @@ func TestPutThenGetRoundTrip(t *testing.T) {
 	r.ServeHTTP(rec, put)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("PUT = %d, want 202", rec.Code)
+	}
+	if got := testutil.ToFloat64(m.UploadBytes); got != float64(len(body)) {
+		t.Fatalf("UploadBytes = %v, want %d", got, len(body))
 	}
 
 	rec = httptest.NewRecorder()
@@ -216,13 +234,117 @@ func TestPutThenGetRoundTrip(t *testing.T) {
 	if !bytes.Equal(rec.Body.Bytes(), body) {
 		t.Fatalf("GET body = %q, want %q", rec.Body.Bytes(), body)
 	}
+	if got := testutil.ToFloat64(m.CacheHit); got != 1 {
+		t.Fatalf("CacheHit = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.CacheMiss); got != 0 {
+		t.Fatalf("CacheMiss = %v, want 0 — this GET was a hit, not a miss", got)
+	}
+	if got := testutil.ToFloat64(m.DownloadBytes); got != float64(len(body)) {
+		t.Fatalf("DownloadBytes = %v, want %d", got, len(body))
+	}
+}
+
+type failingUpsertRepo struct{ memRepo }
+
+func (f *failingUpsertRepo) UpsertArtifact(context.Context, int64, string, int64, string) error {
+	return errors.New("db unavailable")
+}
+
+func TestPutCompensatesStorageWhenMetadataWriteFails(t *testing.T) {
+	store := newSpyStore()
+	m := obs.NewMetrics()
+	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m)
+
+	rec := httptest.NewRecorder()
+	req := requestWithHash(http.MethodPut, "a1b2c3")
+	req.Body = io.NopCloser(bytes.NewReader([]byte("payload")))
+	h.put(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("PUT with failing metadata write = %d, want 500", rec.Code)
+	}
+	if !store.deleteCalled {
+		t.Fatal("expected a compensating Delete after UpsertArtifact failure")
+	}
+	if _, err := store.Head(context.Background(), "team-a/a1b2c3"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("object should have been deleted after metadata failure, Head err = %v", err)
+	}
 }
 
 func TestGetMissIs404(t *testing.T) {
-	r := testRouter(newMemStore(), &memRepo{})
+	r, m := testRouter(newMemStore(), &memRepo{})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v8/artifacts/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET miss = %d, want 404", rec.Code)
+	}
+	if got := testutil.ToFloat64(m.CacheMiss); got != 1 {
+		t.Fatalf("CacheMiss = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.CacheHit); got != 0 {
+		t.Fatalf("CacheHit = %v, want 0 — this GET was a miss, not a hit", got)
+	}
+}
+
+// hashSetRepo lets a test control ArtifactExists per-hash instead of the
+// single blanket bool memRepo offers.
+type hashSetRepo struct {
+	memRepo
+	exists map[string]bool
+}
+
+func (r *hashSetRepo) ArtifactExists(_ context.Context, _ int64, hash string) (bool, error) {
+	return r.exists[hash], nil
+}
+
+func TestBatchExists(t *testing.T) {
+	repo := &hashSetRepo{exists: map[string]bool{"h1": true}}
+	r, _ := testRouter(newMemStore(), repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(`{"hashes":["h1","h2"]}`))
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /v8/artifacts = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var got batchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Hashes["h1"].Exists || got.Hashes["h2"].Exists {
+		t.Fatalf("batch response = %+v, want h1=true h2=false", got.Hashes)
+	}
+}
+
+func TestBatchExistsRejectsEmptyOrOversizedList(t *testing.T) {
+	r, _ := testRouter(newMemStore(), &memRepo{})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(`{"hashes":[]}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty hashes = %d, want 400", rec.Code)
+	}
+
+	big := make([]string, 1001)
+	for i := range big {
+		big[i] = fmt.Sprintf("h%d", i)
+	}
+	payload, _ := json.Marshal(batchRequest{Hashes: big})
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", bytes.NewReader(payload)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("1001 hashes = %d, want 400", rec.Code)
+	}
+}
+
+func TestBatchExistsRejectsHostileHash(t *testing.T) {
+	r, _ := testRouter(newMemStore(), &memRepo{})
+	rec := httptest.NewRecorder()
+	body := `{"hashes":["../team-b/secret"]}`
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(body)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("hostile hash = %d, want 400", rec.Code)
 	}
 }

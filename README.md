@@ -78,6 +78,21 @@ Health/observability:
 
 - `GET /live`, `GET /ready` (checks Postgres via `Repo.Ping`), `GET /metrics` (Prometheus).
 
+### Optional: tracing + error reporting
+
+Both are fully inert until you set their env var:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` — exports spans (storage + DB calls) via OTLP/HTTP to any collector (Tempo, Jaeger, `otel-collector`). Metrics stay Prometheus-only; this is tracing only.
+- `SENTRY_DSN=https://...` — reports panics and storage/DB errors that produce a 5xx. 4xx client errors are never reported.
+
+### Concurrency / heavy-artifact load test
+
+Excluded from the default `go test ./...` (build-tag gated) so CI stays fast:
+
+```bash
+go test -tags loadtest -race ./internal/turbo/... -v
+```
+
 Tear down:
 
 ```bash

@@ -12,8 +12,8 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 | Phase | Title | Status | Plan | Notes |
 |------|-------|--------|------|-------|
 | 1 | Cache API MVP | ✅ **Done** | [phase-1 plan](superpowers/plans/2026-07-08-turbo-cache-forge-phase1.md) | PR #1 merged → `main` (`1e90bfa`). Live `docker compose up` MISS→HIT proven. |
-| 2 | Concurrency & heavy-cache hardening | ⬜ **Next** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks. Absorbs most Phase-1 follow-ups below. |
-| 3 | Management API + OIDC/JWT | ⬜ Planned | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks. Depends on Phase 2. |
+| 2 | Concurrency & heavy-cache hardening | ✅ **Done** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks on branch `phase-2-hardening`. Load test flat-memory proven, batch endpoint, OTel+Sentry opt-in seams, backlog cleared. |
+| 3 | Management API + OIDC/JWT | ⬜ **Next** | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks. Depends on Phase 2. |
 | 4 | Dashboard | ⬜ Planned | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
 | 5 | CLI (`turbo-cache`) | ⬜ Planned | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
@@ -60,7 +60,11 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 
 ---
 
-## Phase 2 — Concurrency & heavy-cache hardening ⬜ NEXT
+## Phase 2 — Concurrency & heavy-cache hardening ✅ DONE
+
+**Shipped on branch `phase-2-hardening` (10 tasks, per-task + final whole-branch review, no Critical findings).** Full detail: the [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md).
+
+**Definition of Done — all met:** ✅ parallel load test passes with flat memory (`-race`; ~67 KiB heap growth on a 200 MiB artifact vs a 32 MiB ceiling) · ✅ batch endpoint `POST /v8/artifacts` returns a correct existence map (a `curl` client stands in for a real Turbo client — stock Turbo v8 has no documented batch-exists call; genuine CLI integration is future work) · ✅ a trace exports only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (OTel is tracing-only — no second metrics pipeline) · ✅ Sentry reports 5xx + panics only when `SENTRY_DSN` is set · ✅ Phase-1 follow-up backlog cleared or explicitly re-deferred (below). Final review confirmed the GET sendfile fast path survives the otelhttp+sentryhttp middleware stack.
 
 **Goal:** make the cache survive real parallel CI load and large artifacts, and clear the Phase-1 follow-up backlog. No new product surface — this is depth on what exists.
 
@@ -135,15 +139,15 @@ cache analytics → cache policies (retention/quota *enforcement*) → distribut
 
 Logged during Phase 1 review, approved as non-blocking. Check off as addressed.
 
-- [ ] **Assert metric counter values** in turbo tests (`testutil.ToFloat64`) — currently only HTTP status is asserted, so a swapped hit/miss counter wouldn't be caught.
-- [ ] **S3 `New`: skip static creds when both keys empty** — currently always overrides the SDK default credential chain; fine for R2/MinIO, breaks AWS IAM-role deployments.
-- [ ] **Pin `goose`** in the Docker `goose` build stage (currently `@latest` + `GOTOOLCHAIN=auto`) — for reproducible/offline builds.
-- [ ] **GET `io.ReaderFrom`/sendfile fast path** — the metrics `statusWriter` wrapper drops it; streaming still correct, minor throughput cost.
-- [ ] **PUT store→metadata non-atomicity** — a failed `UpsertArtifact` after a successful store leaves an orphan object (self-heals on Turbo retry). Add a `// ponytail:` note or a small repair.
-- [ ] **`token.go`** — restore the ponytail rationale comment on why constant-time compare isn't needed (doc gap).
-- [ ] **`s3.go`** — dedupe the `ContentLength` size extraction in `Get`/`Head` (cosmetic).
-- [ ] **`.env.example`** — separate the compose-only vars (`POSTGRES_*`) from the bare-metal `cache-api` vars to reduce confusion.
-- [ ] **Indexes** on `cache_artifacts.project_id` / `api_keys.project_id` — add when a query filters by project (Phase 3+).
+- [x] **Assert metric counter values** in turbo tests (`testutil.ToFloat64`) — **done, Phase 2 Task 3.**
+- [x] **S3 `New`: skip static creds when both keys empty** — **done, Phase 2 Task 2a** (`credentialOptions` falls back to the SDK default chain).
+- [x] **Pin `goose`** in the Docker `goose` build stage — **done, Phase 2 Task 1** (pinned `v3.27.2`, dropped `GOTOOLCHAIN=auto`).
+- [x] **GET `io.ReaderFrom`/sendfile fast path** — **done, Phase 2 Task 4** (`statusWriter.ReadFrom` passthrough; final review confirmed it survives the otelhttp/sentryhttp stack).
+- [x] **PUT store→metadata non-atomicity** — **done, Phase 2 Task 5** (eager best-effort compensating `Delete`; chosen over a repair-sweep note because the orphan is untrackable, not inaccessible).
+- [x] **`token.go`** — restore the ponytail rationale comment — **done, Phase 2 Task 2c.**
+- [x] **`s3.go`** — dedupe the `ContentLength` size extraction in `Get`/`Head` — **done, Phase 2 Task 2b.**
+- [x] **`.env.example`** — separate compose-only vs bare-metal vars — **already separated; Phase 2 Task 10 added the OTel/Sentry opt-in block.**
+- [ ] **Indexes** on `cache_artifacts.project_id` / `api_keys.project_id` — **re-deferred to Phase 3** (no Phase 2 query filters by `project_id`; add when `/api/v1` introduces one).
 - [ ] _Won't-fix unless it bites:_ `fs.path`'s `strings.Contains(key,"..")` is broader than a segment-aware check (harmless behind `validHash`); handler `org` nil-guard (theoretical — `RequireToken` always populates it).
 
 _Already fixed in Phase 1 (not pending): slug `CHECK` constraint, `.env`/seed-snippet docs, HEAD error-handling consistency._

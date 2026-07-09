@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +22,7 @@ type ArtifactStore interface {
 	Put(ctx context.Context, key string, r io.Reader) error
 	Get(ctx context.Context, key string) (io.ReadCloser, *storage.ObjectInfo, error)
 	Head(ctx context.Context, key string) (*storage.ObjectInfo, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type MetaRepo interface {
@@ -45,6 +48,69 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Put("/v8/artifacts/{hash}", h.put)
 	r.Get("/v8/artifacts/{hash}", h.get)
 	r.Post("/v8/artifacts/events", h.events) // telemetry sink
+	r.Post("/v8/artifacts", h.batchExists)
+}
+
+const (
+	// ponytail: batchExists issues N serial ArtifactExists queries — fine off
+	// the download hot path at this cap. If a client needs larger batches,
+	// replace the loop with one SELECT hash FROM cache_artifacts WHERE
+	// org_id=$1 AND hash = ANY($2) and build the map from the result set.
+	maxBatchHashes    = 256
+	batchBodyMaxBytes = 1 << 20 // 1 MiB — a hash list never needs an artifact-sized body
+)
+
+type batchRequest struct {
+	Hashes []string `json:"hashes"`
+}
+
+type batchArtifact struct {
+	Exists bool `json:"exists"`
+}
+
+type batchResponse struct {
+	Hashes map[string]batchArtifact `json:"hashes"`
+}
+
+// batchExists lets a client ask which of many hashes are already cached in
+// one round trip instead of one HEAD per hash — the intended consumer of
+// MetaRepo.ArtifactExists, reserved for exactly this in Phase 1.
+func (h *Handler) batchExists(w http.ResponseWriter, r *http.Request) {
+	org, _ := auth.OrgFromContext(r.Context())
+
+	body := http.MaxBytesReader(w, r.Body, batchBodyMaxBytes)
+	defer body.Close()
+
+	var req batchRequest
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Hashes) == 0 || len(req.Hashes) > maxBatchHashes {
+		http.Error(w, fmt.Sprintf("hashes must contain 1..%d entries", maxBatchHashes), http.StatusBadRequest)
+		return
+	}
+
+	out := make(map[string]batchArtifact, len(req.Hashes))
+	for _, hash := range req.Hashes {
+		if !validHash(hash) {
+			http.Error(w, "invalid hash: "+hash, http.StatusBadRequest)
+			return
+		}
+		exists, err := h.repo.ArtifactExists(r.Context(), org.ID, hash)
+		if err != nil {
+			obs.CaptureError(err)
+			http.Error(w, "lookup failed", http.StatusInternalServerError)
+			return
+		}
+		out[hash] = batchArtifact{Exists: exists}
+	}
+	writeJSON(w, http.StatusOK, batchResponse{Hashes: out})
 }
 
 func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
@@ -68,6 +134,7 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		obs.CaptureError(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -90,16 +157,25 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "artifact too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		obs.CaptureError(err)
 		http.Error(w, "upload failed", http.StatusInternalServerError)
 		return
 	}
 	info, err := h.store.Head(r.Context(), key)
 	if err != nil {
+		obs.CaptureError(err)
 		http.Error(w, "upload verify failed", http.StatusInternalServerError)
 		return
 	}
 	tag := r.Header.Get("x-artifact-tag")
 	if err := h.repo.UpsertArtifact(r.Context(), org.ID, hash, info.Size, tag); err != nil {
+		// Best-effort compensating delete — see Task 5's Decision note in the
+		// Phase 2 plan for why this is eager rather than a repair-sweep TODO.
+		if delErr := h.store.Delete(r.Context(), key); delErr != nil {
+			obs.CaptureError(delErr)
+			log.Printf("turbo: put %s: compensating delete after metadata failure also failed: %v", key, delErr)
+		}
+		obs.CaptureError(err)
 		http.Error(w, "metadata write failed", http.StatusInternalServerError)
 		return
 	}
@@ -123,6 +199,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		obs.CaptureError(err)
 		http.Error(w, "download failed", http.StatusInternalServerError)
 		return
 	}
