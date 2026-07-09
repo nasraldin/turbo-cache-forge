@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,8 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
 )
+
+var slugRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 type Repo interface {
 	CreateToken(ctx context.Context, orgID int64, name, tokenHash string) (int64, error)
@@ -64,7 +67,11 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
-	org, _ := auth.OrgFromContext(r.Context())
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
 	keys, err := h.repo.ListTokens(r.Context(), org.ID)
 	if err != nil {
 		http.Error(w, "list failed", http.StatusInternalServerError)
@@ -81,36 +88,124 @@ func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request) {
-	org, _ := auth.OrgFromContext(r.Context())
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	ok, err := h.repo.RevokeToken(r.Context(), org.ID, id)
+	revoked, err := h.repo.RevokeToken(r.Context(), org.ID, id)
 	if err != nil {
 		http.Error(w, "revoke failed", http.StatusInternalServerError)
 		return
 	}
-	if !ok {
+	if !revoked {
 		http.Error(w, "not found", http.StatusNotFound) // unknown or another org's token
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Task 6 implements these; stubs keep the package compiling and Mount complete.
 func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "todo", http.StatusNotImplemented)
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	var in struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" || !slugRe.MatchString(in.Slug) {
+		http.Error(w, "slug must match ^[a-z0-9-]+$ and name is required", http.StatusBadRequest)
+		return
+	}
+	p, err := h.repo.CreateProject(r.Context(), org.ID, in.Slug, in.Name)
+	if err != nil {
+		http.Error(w, "create failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
 }
+
 func (h *Handler) listProjects(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "todo", http.StatusNotImplemented)
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	ps, err := h.repo.ListProjects(r.Context(), org.ID)
+	if err != nil {
+		http.Error(w, "list failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, ps)
 }
+
 func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "todo", http.StatusNotImplemented)
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	s, err := h.repo.Stats(r.Context(), org.ID)
+	if err != nil {
+		http.Error(w, "stats failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"storage_bytes": s.StorageBytes, "artifact_count": s.ArtifactCount,
+		"hits": s.Hits, "misses": s.Misses, "requests": s.Requests,
+		"bytes_up": s.BytesUp, "bytes_down": s.BytesDown,
+	})
 }
+
 func (h *Handler) listArtifacts(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "todo", http.StatusNotImplemented)
+	org, ok := auth.OrgFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no org", http.StatusUnauthorized)
+		return
+	}
+	limit, err := parseClampedInt(r.URL.Query().Get("limit"), 50, 1, 200)
+	if err != nil {
+		http.Error(w, "invalid limit", http.StatusBadRequest)
+		return
+	}
+	offset, err := parseClampedInt(r.URL.Query().Get("offset"), 0, 0, 1<<31-1)
+	if err != nil {
+		http.Error(w, "invalid offset", http.StatusBadRequest)
+		return
+	}
+	arts, err := h.repo.ListArtifacts(r.Context(), org.ID, limit, offset)
+	if err != nil {
+		http.Error(w, "list failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"limit": limit, "offset": offset, "artifacts": arts})
+}
+
+// parseClampedInt parses s (empty => def). A present-but-non-numeric value is
+// rejected with an error rather than silently clamped, so bad input surfaces
+// as 400 instead of being coerced into something the caller didn't ask for.
+func parseClampedInt(s string, def, lo, hi int) (int, error) {
+	if s == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, err
+	}
+	if n < lo {
+		n = lo
+	}
+	if n > hi {
+		n = hi
+	}
+	return n, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

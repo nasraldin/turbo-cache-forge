@@ -103,3 +103,113 @@ func TestListTokensHasNoSecret(t *testing.T) {
 		t.Fatalf("list leaked secret or bad status: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestCreateProjectValidatesSlug(t *testing.T) {
+	r := testRouter(&fakeRepo{})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/projects",
+		bytes.NewBufferString(`{"slug":"Bad Slug","name":"x"}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad slug = %d, want 400", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/projects",
+		bytes.NewBufferString(`{"slug":"web","name":"Web"}`)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("good slug = %d, want 201", rec.Code)
+	}
+}
+
+func TestListProjectsOrgScoped(t *testing.T) {
+	repo := &fakeRepo{projects: []db.Project{{ID: 1, Slug: "web", Name: "Web"}}}
+	r := testRouter(repo)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"web"`)) {
+		t.Fatalf("list projects = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestStatsAndArtifacts(t *testing.T) {
+	repo := &fakeRepo{
+		stats:     db.Stats{StorageBytes: 100, Hits: 4, Misses: 1, Requests: 5},
+		artifacts: []db.Artifact{{Hash: "h1", SizeBytes: 10}},
+	}
+	r := testRouter(repo)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"storage_bytes":100`)) {
+		t.Fatalf("stats = %d %s", rec.Code, rec.Body)
+	}
+
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=10", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"h1"`)) {
+		t.Fatalf("artifacts = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestListArtifactsClampsAndDefaults(t *testing.T) {
+	repo := &fakeRepo{artifacts: []db.Artifact{{Hash: "h1", SizeBytes: 10}}}
+	r := testRouter(repo)
+
+	// no limit/offset given -> default limit 50, offset 0
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"limit":50`)) {
+		t.Fatalf("default limit = %d %s", rec.Code, rec.Body)
+	}
+
+	// limit above cap gets clamped to 200
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=99999", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"limit":200`)) {
+		t.Fatalf("clamp limit = %d %s", rec.Code, rec.Body)
+	}
+
+	// negative limit gets clamped to the floor of 1
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=-5", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"limit":1`)) {
+		t.Fatalf("clamp negative limit = %d %s", rec.Code, rec.Body)
+	}
+
+	// non-numeric limit is rejected outright rather than silently coerced
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=abc", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad limit = %d, want 400", rec.Code)
+	}
+
+	// non-numeric offset is likewise rejected
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?offset=abc", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad offset = %d, want 400", rec.Code)
+	}
+}
+
+func TestMgmtHandlersRequireOrg(t *testing.T) {
+	h := NewHandler(&fakeRepo{})
+	r := chi.NewRouter()
+	r.Route("/api/v1", func(pr chi.Router) { h.Mount(pr) }) // no org-injecting middleware
+
+	cases := []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/v1/tokens"},
+		{http.MethodDelete, "/api/v1/tokens/1"},
+		{http.MethodPost, "/api/v1/projects"},
+		{http.MethodGet, "/api/v1/projects"},
+		{http.MethodGet, "/api/v1/stats"},
+		{http.MethodGet, "/api/v1/artifacts"},
+	}
+	for _, c := range cases {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, bytes.NewBufferString(`{}`)))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s missing org = %d, want 401", c.method, c.path, rec.Code)
+		}
+	}
+}
