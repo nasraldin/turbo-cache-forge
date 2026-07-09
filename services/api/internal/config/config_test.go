@@ -27,3 +27,27 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 		t.Fatal("expected error when DATABASE_URL is unset")
 	}
 }
+
+func TestLoadOIDCOptional(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("OIDC_ISSUER", "")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OIDCOrgClaim != "org_id" {
+		t.Errorf("OIDCOrgClaim default = %q, want org_id", c.OIDCOrgClaim)
+	}
+	if c.RetentionDays != 30 {
+		t.Errorf("RetentionDays default = %d, want 30", c.RetentionDays)
+	}
+}
+
+func TestLoadOIDCRequiresAudience(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("OIDC_ISSUER", "https://issuer.example")
+	t.Setenv("OIDC_AUDIENCE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error: OIDC_AUDIENCE required when OIDC_ISSUER set")
+	}
+}
