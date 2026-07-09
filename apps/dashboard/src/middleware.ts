@@ -22,8 +22,10 @@ function clerkGuard() {
 }
 
 export default function middleware(req: NextRequest, ev: NextFetchEvent) {
-  // Built-in auth mode ships no Clerk secret; skip Clerk and let the
-  // client-side session guard (BuiltinSessionProvider) handle redirects.
+  // CLERK_SECRET_KEY presence is the oidc/builtin switch: built-in auth mode
+  // ships NO Clerk secret, so skip Clerk here and let the client-side session
+  // guard (BuiltinSessionProvider) handle redirects. If a builtin deployment
+  // leaves a (dummy) CLERK_SECRET_KEY set, every route would redirect-loop.
   if (!process.env.CLERK_SECRET_KEY) return NextResponse.next();
   return clerkGuard()(req, ev);
 }

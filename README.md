@@ -116,6 +116,8 @@ The dashboard detects the mode from `GET /api/v1/auth/config` and shows the
 built-in sign-in page automatically. Cache tokens for Turborepo are still
 minted in the dashboard exactly as before.
 
+**Dashboard note:** in built-in mode the dashboard must run with `CLERK_SECRET_KEY` unset — the Next.js middleware runs Clerk auth whenever that variable is present, which would redirect-loop the app. It is commented out in `apps/dashboard/.env.example`.
+
 ## Configuration
 
 See [`.env.example`](.env.example) for every environment variable (storage backend,
