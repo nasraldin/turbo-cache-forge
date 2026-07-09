@@ -2,14 +2,11 @@
 // (services/api/internal/mgmt/handlers.go + internal/db/repo.go), not from
 // the OpenAPI doc (which has no response schemas) or invented conventions.
 //
-// ponytail: casing is inconsistent across endpoints in the real API —
-// Project/Artifact have no `json:` struct tags in Go, so encoding/json
-// serializes their exported Go field names verbatim (PascalCase); Token and
-// Stats are hand-built with map[string]any using snake_case keys. This file
-// documents that wart rather than "fixing" it — fixing it means adding json
-// tags to services/api/internal/db, which is out of scope for this task
-// (Go backend stays untouched). Flag as a Phase-3 follow-up if consistency
-// is wanted later.
+// ponytail: casing used to be inconsistent (Project/Artifact serialized
+// PascalCase because db.Project/db.Artifact had no json struct tags, while
+// Token/Stats were hand-built snake_case maps). Fixed by adding json tags in
+// services/api/internal/db/repo.go — the whole /api/v1 surface is now
+// snake_case, so these types no longer need to document the wart.
 
 // GET /api/v1/stats
 export interface Stats {
@@ -23,23 +20,21 @@ export interface Stats {
 }
 
 // GET /api/v1/projects (array) and 201 body of POST /api/v1/projects.
-// PascalCase because db.Project has no json struct tags.
 export interface Project {
-  ID: number;
-  Slug: string;
-  Name: string;
-  CreatedAt: string;
+  id: number;
+  slug: string;
+  name: string;
+  created_at: string;
 }
 
 // Element of the `artifacts` array in GET /api/v1/artifacts.
-// PascalCase because db.Artifact has no json struct tags. No project-slug
-// field exists on the backend struct/query — do not invent one.
+// No project-slug field exists on the backend struct/query — do not invent one.
 export interface Artifact {
-  Hash: string;
-  SizeBytes: number;
-  Tag: string | null;
-  CreatedAt: string;
-  LastAccessedAt: string;
+  hash: string;
+  size_bytes: number;
+  tag: string | null;
+  created_at: string;
+  last_accessed_at: string;
 }
 
 // GET /api/v1/artifacts?limit=&offset= — offset pagination, not cursor-based.

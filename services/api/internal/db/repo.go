@@ -114,12 +114,12 @@ func (r *Repo) EnsureOrgByIdpID(ctx context.Context, idpOrgID, name string) (org
 }
 
 type APIKey struct {
-	ID         int64
-	Name       string
-	ProjectID  *int64
-	LastUsedAt *time.Time
-	CreatedAt  time.Time
-	RevokedAt  *time.Time
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	ProjectID  *int64     `json:"project_id"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
 // CreateToken stores only the SHA-256 hash (via auth.HashToken upstream);
@@ -171,10 +171,10 @@ func (r *Repo) RevokeToken(ctx context.Context, orgID, tokenID int64) (ok bool, 
 }
 
 type Project struct {
-	ID        int64
-	Slug      string
-	Name      string
-	CreatedAt time.Time
+	ID        int64     `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (r *Repo) CreateProject(ctx context.Context, orgID int64, slug, name string) (proj Project, err error) {
@@ -209,13 +209,13 @@ func (r *Repo) ListProjects(ctx context.Context, orgID int64) (projects []Projec
 }
 
 type Stats struct {
-	StorageBytes  int64
-	ArtifactCount int64
-	Hits          int64
-	Misses        int64
-	Requests      int64
-	BytesUp       int64
-	BytesDown     int64
+	StorageBytes  int64 `json:"storage_bytes"`
+	ArtifactCount int64 `json:"artifact_count"`
+	Hits          int64 `json:"hits"`
+	Misses        int64 `json:"misses"`
+	Requests      int64 `json:"requests"`
+	BytesUp       int64 `json:"bytes_up"`
+	BytesDown     int64 `json:"bytes_down"`
 }
 
 func (r *Repo) Stats(ctx context.Context, orgID int64) (s Stats, err error) {
@@ -237,11 +237,11 @@ func (r *Repo) Stats(ctx context.Context, orgID int64) (s Stats, err error) {
 }
 
 type Artifact struct {
-	Hash           string
-	SizeBytes      int64
-	Tag            *string
-	CreatedAt      time.Time
-	LastAccessedAt time.Time
+	Hash           string    `json:"hash"`
+	SizeBytes      int64     `json:"size_bytes"`
+	Tag            *string   `json:"tag"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastAccessedAt time.Time `json:"last_accessed_at"`
 }
 
 func (r *Repo) ListArtifacts(ctx context.Context, orgID int64, limit, offset int) (artifacts []Artifact, err error) {

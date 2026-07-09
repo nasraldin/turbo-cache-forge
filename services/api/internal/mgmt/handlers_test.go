@@ -145,7 +145,7 @@ func TestStatsAndArtifacts(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts?limit=10", nil))
-	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"h1"`)) {
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"hash":"h1"`)) {
 		t.Fatalf("artifacts = %d %s", rec.Code, rec.Body)
 	}
 }
