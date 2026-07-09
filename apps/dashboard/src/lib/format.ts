@@ -1,6 +1,7 @@
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB", "TB", "PB"];
+  // Binary (1024-based) scaling — label as KiB/MiB/GiB per design brief, not decimal KB/MB/GB.
+  const units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
   let v = n / 1024;
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
