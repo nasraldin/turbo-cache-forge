@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType, ReactNode } from "react";
+import { useSession } from "@/app/session";
 import { cn } from "@/lib/utils";
 
 // Mirrors the backend OIDC_ORG_ENABLED. Off by default: in personal mode Clerk
@@ -35,6 +36,8 @@ const nav: { href: string; label: string; icon: ComponentType<{ className?: stri
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const session = useSession();
+  const isOidc = session.mode === "oidc";
 
   return (
     <div className="grid min-h-screen grid-rows-[auto_1fr] md:grid-cols-[240px_1fr] md:grid-rows-1">
@@ -44,7 +47,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <span className="text-lg font-semibold tracking-tight text-text">turbo-cache-forge</span>
         </Link>
 
-        {orgEnabled && <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/" />}
+        {isOidc && orgEnabled && (
+          <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/" />
+        )}
 
         <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
           {nav.map((item) => {
@@ -70,7 +75,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="mt-auto flex items-center gap-2 px-2">
-          <UserButton />
+          {isOidc ? (
+            <UserButton />
+          ) : (
+            <button
+              type="button"
+              onClick={session.signOut}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </aside>
 
