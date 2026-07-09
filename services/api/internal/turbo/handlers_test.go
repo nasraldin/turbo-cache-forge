@@ -3,10 +3,13 @@ package turbo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -281,5 +284,67 @@ func TestGetMissIs404(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(m.CacheHit); got != 0 {
 		t.Fatalf("CacheHit = %v, want 0 — this GET was a miss, not a hit", got)
+	}
+}
+
+// hashSetRepo lets a test control ArtifactExists per-hash instead of the
+// single blanket bool memRepo offers.
+type hashSetRepo struct {
+	memRepo
+	exists map[string]bool
+}
+
+func (r *hashSetRepo) ArtifactExists(_ context.Context, _ int64, hash string) (bool, error) {
+	return r.exists[hash], nil
+}
+
+func TestBatchExists(t *testing.T) {
+	repo := &hashSetRepo{exists: map[string]bool{"h1": true}}
+	r, _ := testRouter(newMemStore(), repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(`{"hashes":["h1","h2"]}`))
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /v8/artifacts = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var got batchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Hashes["h1"].Exists || got.Hashes["h2"].Exists {
+		t.Fatalf("batch response = %+v, want h1=true h2=false", got.Hashes)
+	}
+}
+
+func TestBatchExistsRejectsEmptyOrOversizedList(t *testing.T) {
+	r, _ := testRouter(newMemStore(), &memRepo{})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(`{"hashes":[]}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty hashes = %d, want 400", rec.Code)
+	}
+
+	big := make([]string, 1001)
+	for i := range big {
+		big[i] = fmt.Sprintf("h%d", i)
+	}
+	payload, _ := json.Marshal(batchRequest{Hashes: big})
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", bytes.NewReader(payload)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("1001 hashes = %d, want 400", rec.Code)
+	}
+}
+
+func TestBatchExistsRejectsHostileHash(t *testing.T) {
+	r, _ := testRouter(newMemStore(), &memRepo{})
+	rec := httptest.NewRecorder()
+	body := `{"hashes":["../team-b/secret"]}`
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(body)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("hostile hash = %d, want 400", rec.Code)
 	}
 }

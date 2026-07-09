@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -47,6 +48,65 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Put("/v8/artifacts/{hash}", h.put)
 	r.Get("/v8/artifacts/{hash}", h.get)
 	r.Post("/v8/artifacts/events", h.events) // telemetry sink
+	r.Post("/v8/artifacts", h.batchExists)
+}
+
+const (
+	maxBatchHashes    = 1000
+	batchBodyMaxBytes = 1 << 20 // 1 MiB — a hash list never needs an artifact-sized body
+)
+
+type batchRequest struct {
+	Hashes []string `json:"hashes"`
+}
+
+type batchArtifact struct {
+	Exists bool `json:"exists"`
+}
+
+type batchResponse struct {
+	Hashes map[string]batchArtifact `json:"hashes"`
+}
+
+// batchExists lets a client ask which of many hashes are already cached in
+// one round trip instead of one HEAD per hash — the intended consumer of
+// MetaRepo.ArtifactExists, reserved for exactly this in Phase 1.
+func (h *Handler) batchExists(w http.ResponseWriter, r *http.Request) {
+	org, _ := auth.OrgFromContext(r.Context())
+
+	body := http.MaxBytesReader(w, r.Body, batchBodyMaxBytes)
+	defer body.Close()
+
+	var req batchRequest
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Hashes) == 0 || len(req.Hashes) > maxBatchHashes {
+		http.Error(w, fmt.Sprintf("hashes must contain 1..%d entries", maxBatchHashes), http.StatusBadRequest)
+		return
+	}
+
+	out := make(map[string]batchArtifact, len(req.Hashes))
+	for _, hash := range req.Hashes {
+		if !validHash(hash) {
+			http.Error(w, "invalid hash: "+hash, http.StatusBadRequest)
+			return
+		}
+		exists, err := h.repo.ArtifactExists(r.Context(), org.ID, hash)
+		if err != nil {
+			obs.CaptureError(err)
+			http.Error(w, "lookup failed", http.StatusInternalServerError)
+			return
+		}
+		out[hash] = batchArtifact{Exists: exists}
+	}
+	writeJSON(w, http.StatusOK, batchResponse{Hashes: out})
 }
 
 func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
