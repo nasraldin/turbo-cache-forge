@@ -13,8 +13,8 @@ Canonical status doc. **Read this first** before working on any phase. It tracks
 |------|-------|--------|------|-------|
 | 1 | Cache API MVP | ✅ **Done** | [phase-1 plan](superpowers/plans/2026-07-08-turbo-cache-forge-phase1.md) | PR #1 merged → `main` (`1e90bfa`). Live `docker compose up` MISS→HIT proven. |
 | 2 | Concurrency & heavy-cache hardening | ✅ **Done** | [phase-2 plan](superpowers/plans/2026-07-08-phase-2-hardening.md) | 10 tasks on branch `phase-2-hardening`. Load test flat-memory proven, batch endpoint, OTel+Sentry opt-in seams, backlog cleared. |
-| 3 | Management API + OIDC/JWT | ⬜ **Next** | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks. Depends on Phase 2. |
-| 4 | Dashboard | ⬜ Planned | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
+| 3 | Management API + OIDC/JWT | ✅ **Done** | [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md) | 10 tasks on branch `phase-3-management-api-oidc`. `/api/v1` (OIDC), usage rollup, cleanup cron, OpenAPI. Live DB + hermetic JWKS verified. |
+| 4 | Dashboard | ⬜ **Next** | [phase-4 plan](superpowers/plans/2026-07-08-phase-4-dashboard.md) | 11 tasks. Depends on Phase 3 (`/api/v1`). |
 | 5 | CLI (`turbo-cache`) | ⬜ Planned | [phase-5 plan](superpowers/plans/2026-07-08-phase-5-cli.md) | 9 tasks. Thin client over `/api/v1`. |
 | — | North star | 💤 Deferred | — | analytics → policies → distributed → enterprise. |
 
@@ -84,7 +84,13 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 
 ---
 
-## Phase 3 — Management API (`/api/v1`) + OIDC/JWT ⬜ Planned
+## Phase 3 — Management API (`/api/v1`) + OIDC/JWT ✅ DONE
+
+**Shipped on branch `phase-3-management-api-oidc` (10 tasks, per-task + final whole-branch review, no Critical findings).** Full detail: the [phase-3 plan](superpowers/plans/2026-07-08-phase-3-management-api-oidc.md).
+
+**Definition of Done — met:** ✅ JWT trust boundary enforced (go-oidc: signature+issuer+audience+expiry, no `Skip*`, empty-audience fails closed) — proven hermetically with real RS256 JWTs against a real JWKS (Task 4 table tests + Task 10 router integration test); a real-Keycloak e2e is documented (`infra/docker/docker-compose.keycloak.yml` + acceptance steps) as the manual verification · ✅ token create→use→revoke is a single org-bound scheme (plaintext once, hash stored; cross-org read structurally impossible) · ✅ cleanup cron (object-then-row, idempotent, batched) · ✅ usage rollup feeds `/api/v1/stats` (in-memory on the hot path, ticker to `usage_daily`; re-absorbs deltas on partial write failure) · ✅ OpenAPI + Swagger UI served · ✅ live Postgres 16 used for migration 002 round-trip + repo + router integration tests. Two auth worlds stay import-separated (`go list` verified: cache path is SDK-free).
+
+**Open questions resolved:** IdP is provider-agnostic (go-oidc/JWKS; Keycloak used for the e2e harness — no vendor SDK). Quota *enforcement* stays OFF (columns exist, unenforced) — deferred to North star.
 
 **Goal:** let humans (and later the dashboard/CLI) manage orgs, projects, and tokens over an authenticated, versioned API — without coupling the backend to any auth vendor.
 
