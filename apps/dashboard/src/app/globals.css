@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens — see .superpowers/sdd/design-brief.md.
+ * "Instrument panel for a build cache": HIT (teal) vs MISS (amber) is the
+ * through-line; danger red is reserved for destructive actions only.
+ * Dark is the default theme; light is an explicit override (both required).
+ */
+:root {
+  --bg: #0e1116;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --border: #232a34;
+  --text: #e6edf3;
+  --muted: #8b98a9;
+  --hit: #3fb98c;
+  --miss: #e0863a;
+  --danger: #e5534b;
+}
+
+:root[data-theme="light"] {
+  --bg: #fbfcfd;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --border: #e4e8ee;
+  --text: #0e1116;
+  --muted: #5a6675;
+  --hit: #1f9e72;
+  --miss: #c26a1e;
+  --danger: #c6413a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #fbfcfd;
+    --surface: #ffffff;
+    --surface-2: #f3f5f8;
+    --border: #e4e8ee;
+    --text: #0e1116;
+    --muted: #5a6675;
+    --hit: #1f9e72;
+    --miss: #c26a1e;
+    --danger: #c6413a;
+  }
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark light;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Machine values (rates, byte counts, hashes, tokens) — always mono, tabular. */
+.font-data {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible keyboard focus ring in the --hit accent, per the design brief's quality floor. */
+:focus-visible {
+  outline: 2px solid var(--hit);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
