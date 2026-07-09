@@ -16,6 +16,7 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
 
 type ArtifactStore interface {
@@ -36,10 +37,11 @@ type Handler struct {
 	repo     MetaRepo
 	maxBytes int64
 	metrics  *obs.Metrics
+	usage    *usage.Accumulator
 }
 
-func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64, metrics *obs.Metrics) *Handler {
-	return &Handler{store: store, repo: repo, maxBytes: maxBytes, metrics: metrics}
+func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64, metrics *obs.Metrics, acc *usage.Accumulator) *Handler {
+	return &Handler{store: store, repo: repo, maxBytes: maxBytes, metrics: metrics, usage: acc}
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -128,7 +130,7 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, _ := auth.OrgFromContext(r.Context())
-	key := storageKey(org.Slug, hash)
+	key := StorageKey(org.Slug, hash)
 	if _, err := h.store.Head(r.Context(), key); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
@@ -148,7 +150,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, _ := auth.OrgFromContext(r.Context())
-	key := storageKey(org.Slug, hash)
+	key := StorageKey(org.Slug, hash)
 
 	body := http.MaxBytesReader(w, r.Body, h.maxBytes)
 	if err := h.store.Put(r.Context(), key, body); err != nil {
@@ -180,6 +182,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.metrics.UploadBytes.Add(float64(info.Size))
+	h.usage.Upload(org.ID, info.Size)
 	writeJSON(w, http.StatusAccepted, map[string][]string{"urls": {key}})
 }
 
@@ -190,11 +193,12 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, _ := auth.OrgFromContext(r.Context())
-	key := storageKey(org.Slug, hash)
+	key := StorageKey(org.Slug, hash)
 
 	rc, info, err := h.store.Get(r.Context(), key)
 	if errors.Is(err, storage.ErrNotFound) {
 		h.metrics.CacheMiss.Inc()
+		h.usage.Miss(org.ID)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -206,6 +210,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	defer rc.Close()
 	h.metrics.CacheHit.Inc()
 	h.metrics.DownloadBytes.Add(float64(info.Size))
+	h.usage.Hit(org.ID, info.Size)
 
 	// fire-and-forget last_accessed bump — never block the download on the DB
 	// ponytail: fire-and-forget touch; batch it only if last_accessed write volume ever shows up in DB metrics

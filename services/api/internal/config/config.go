@@ -7,14 +7,21 @@ import (
 )
 
 type Config struct {
-	Addr           string
-	DatabaseURL    string
-	StorageBackend string // "fs" | "s3"
-	StoragePath    string
-	S3Bucket       string
-	S3Endpoint     string
-	S3Region       string
-	MaxUploadBytes int64
+	Addr               string
+	DatabaseURL        string
+	StorageBackend     string // "fs" | "s3"
+	StoragePath        string
+	S3Bucket           string
+	S3Endpoint         string
+	S3Region           string
+	MaxUploadBytes     int64
+	OIDCIssuer         string
+	OIDCJWKSURL        string
+	OIDCAudience       string
+	OIDCOrgClaim       string
+	RetentionDays      int
+	RollupIntervalSec  int
+	CleanupIntervalSec int
 }
 
 func Load() (Config, error) {
@@ -34,6 +41,20 @@ func Load() (Config, error) {
 	if c.StorageBackend == "s3" && c.S3Bucket == "" {
 		return c, fmt.Errorf("STORAGE_S3_BUCKET is required when STORAGE_BACKEND=s3")
 	}
+
+	// ponytail: OIDC optional — cache-only self-hosts skip it entirely; no dashboard deps forced on them.
+	c.OIDCIssuer = os.Getenv("OIDC_ISSUER")
+	c.OIDCJWKSURL = os.Getenv("OIDC_JWKS_URL")
+	c.OIDCAudience = os.Getenv("OIDC_AUDIENCE")
+	c.OIDCOrgClaim = env("OIDC_ORG_CLAIM", "org_id")
+	c.RetentionDays = int(envInt("RETENTION_DAYS", 30))
+	c.RollupIntervalSec = int(envInt("USAGE_ROLLUP_INTERVAL_SEC", 300))
+	c.CleanupIntervalSec = int(envInt("CLEANUP_INTERVAL_SEC", 3600))
+
+	if c.OIDCIssuer != "" && c.OIDCAudience == "" {
+		return c, fmt.Errorf("OIDC_AUDIENCE is required when OIDC_ISSUER is set")
+	}
+
 	return c, nil
 }
 

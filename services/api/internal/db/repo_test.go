@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -77,5 +78,100 @@ func TestRepoMethodsEmitSpans(t *testing.T) {
 	}
 	if !sawOrgLookup {
 		t.Fatal("expected a db.OrgByTokenHash span")
+	}
+}
+
+func TestEnsureOrgAndManagement(t *testing.T) {
+	r := testRepo(t)
+	ctx := context.Background()
+
+	org, err := r.EnsureOrgByIdpID(ctx, "idp-org-abc", "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if org.Slug == "" || org.ID == 0 {
+		t.Fatalf("EnsureOrgByIdpID = %+v", org)
+	}
+	// idempotent: same idp id → same org row
+	again, err := r.EnsureOrgByIdpID(ctx, "idp-org-abc", "Acme Renamed")
+	if err != nil || again.ID != org.ID {
+		t.Fatalf("re-ensure = %+v, %v (want id %d)", again, err, org.ID)
+	}
+
+	// tokens: create → list (no secret) → revoke
+	id, err := r.CreateToken(ctx, org.ID, "ci", "hash-xyz")
+	if err != nil || id == 0 {
+		t.Fatalf("CreateToken = %d, %v", id, err)
+	}
+	keys, err := r.ListTokens(ctx, org.ID)
+	if err != nil || len(keys) != 1 || keys[0].Name != "ci" {
+		t.Fatalf("ListTokens = %+v, %v", keys, err)
+	}
+	ok, err := r.RevokeToken(ctx, org.ID, id)
+	if err != nil || !ok {
+		t.Fatalf("RevokeToken = %v, %v", ok, err)
+	}
+	// revoked token no longer authenticates the cache path
+	if _, err := r.OrgByTokenHash(ctx, "hash-xyz"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("revoked token lookup = %v, want ErrUnauthorized", err)
+	}
+	// cross-org revoke is a no-op
+	other, _ := r.EnsureOrgByIdpID(ctx, "idp-org-other", "Other")
+	id2, _ := r.CreateToken(ctx, org.ID, "k2", "hash-2")
+	if ok, _ := r.RevokeToken(ctx, other.ID, id2); ok {
+		t.Fatal("cross-org revoke must not succeed")
+	}
+
+	// projects
+	p, err := r.CreateProject(ctx, org.ID, "web", "Web App")
+	if err != nil || p.ID == 0 {
+		t.Fatalf("CreateProject = %+v, %v", p, err)
+	}
+	ps, _ := r.ListProjects(ctx, org.ID)
+	if len(ps) != 1 {
+		t.Fatalf("ListProjects = %+v", ps)
+	}
+
+	// usage + stats
+	_ = r.UpsertArtifact(ctx, org.ID, "h1", 100, "")
+	if err := r.AddUsage(ctx, org.ID, time.Now().UTC(), 100, 200, 3, 1); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.AddUsage(ctx, org.ID, time.Now().UTC(), 0, 50, 1, 0) // accumulates same day
+	st, err := r.Stats(ctx, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.StorageBytes != 100 || st.Hits != 4 || st.Misses != 1 || st.BytesDown != 250 {
+		t.Fatalf("Stats = %+v", st)
+	}
+
+	arts, err := r.ListArtifacts(ctx, org.ID, 10, 0)
+	if err != nil || len(arts) != 1 || arts[0].Hash != "h1" {
+		t.Fatalf("ListArtifacts = %+v, %v", arts, err)
+	}
+}
+
+func TestExpiredArtifacts(t *testing.T) {
+	r := testRepo(t)
+	ctx := context.Background()
+	org, _ := r.EnsureOrgByIdpID(ctx, "idp-exp", "Exp")
+	_ = r.UpsertArtifact(ctx, org.ID, "old", 10, "")
+	// force last_accessed_at into the past
+	_, _ = r.pool.Exec(ctx,
+		`UPDATE cache_artifacts SET last_accessed_at = now() - interval '90 days' WHERE org_id=$1 AND hash='old'`, org.ID)
+
+	exp, err := r.ExpiredArtifacts(ctx, time.Now().Add(-24*time.Hour), 100)
+	if err != nil || len(exp) == 0 {
+		t.Fatalf("ExpiredArtifacts = %+v, %v", exp, err)
+	}
+	if exp[0].OrgSlug != org.Slug || exp[0].Hash != "old" {
+		t.Fatalf("expired[0] = %+v", exp[0])
+	}
+	if err := r.DeleteArtifact(ctx, org.ID, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.ArtifactExists(ctx, org.ID, "old"); ok {
+		t.Fatal("artifact should be gone after DeleteArtifact")
 	}
 }
