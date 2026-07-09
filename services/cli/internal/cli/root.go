@@ -18,6 +18,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.SetVersionTemplate("turbo-cache version {{.Version}}\n")
 	root.PersistentFlags().String("api", "", "management API base URL (overrides TURBO_CACHE_API and the config file)")
+	root.AddCommand(newLoginCmd())
 	return root
 }
 
