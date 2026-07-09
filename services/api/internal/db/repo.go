@@ -14,6 +14,7 @@ import (
 )
 
 var ErrUnauthorized = errors.New("db: no matching active token")
+var ErrArtifactNotFound = errors.New("db: artifact not found")
 
 type Org struct {
 	ID       int64
@@ -360,4 +361,51 @@ func (r *Repo) DeleteArtifact(ctx context.Context, orgID int64, hash string) (er
 	const q = `DELETE FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
 	_, err = r.pool.Exec(ctx, q, orgID, hash)
 	return err
+}
+
+func (r *Repo) GetArtifact(ctx context.Context, orgID int64, hash string) (a Artifact, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.GetArtifact")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
+	           FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
+	err = r.pool.QueryRow(ctx, q, orgID, hash).Scan(&a.Hash, &a.SizeBytes, &a.Tag, &a.CreatedAt, &a.LastAccessedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Artifact{}, ErrArtifactNotFound
+	}
+	return a, err
+}
+
+// ListArtifactHashes returns every artifact hash for the org (used to remove
+// blobs before a clear-all). Operator-scale counts; read in one query.
+func (r *Repo) ListArtifactHashes(ctx context.Context, orgID int64) (hashes []string, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ListArtifactHashes")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT hash FROM cache_artifacts WHERE org_id=$1`
+	rows, err := r.pool.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var h string
+		if err = rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		hashes = append(hashes, h)
+	}
+	return hashes, rows.Err()
+}
+
+func (r *Repo) DeleteAllArtifacts(ctx context.Context, orgID int64) (n int64, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.DeleteAllArtifacts")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `DELETE FROM cache_artifacts WHERE org_id=$1`
+	tag, err := r.pool.Exec(ctx, q, orgID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
