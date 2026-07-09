@@ -43,10 +43,19 @@ services:
       OIDC_ORG_CLAIM: ${OIDC_ORG_CLAIM:-org_id}
       OIDC_ORG_ENABLED: ${OIDC_ORG_ENABLED:-true}
       # Browser origins allowed to call /api/v1 (the dashboard). Empty = CORS off.
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Defaults to the dashboard's dev origin so built-in-auth login works out of
+      # the box; the browser POSTs credentials to /api/v1/auth/login cross-origin.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       # How often the in-memory hit/miss counters flush to usage_daily. Default 300s
-      # (prod); lower it locally so dashboard stats update within seconds.
-      USAGE_ROLLUP_INTERVAL_SEC: ${USAGE_ROLLUP_INTERVAL_SEC:-300}
+      # (prod); lowered here so dashboard stats update within seconds while testing.
+      USAGE_ROLLUP_INTERVAL_SEC: ${USAGE_ROLLUP_INTERVAL_SEC:-15}
+      # Built-in auth (no external IdP): a single root user set here. The dashboard
+      # auto-detects this via GET /api/v1/auth/config and shows its password sign-in
+      # page. Switch to OIDC by setting AUTH_MODE=oidc + OIDC_ISSUER above.
+      AUTH_MODE: ${AUTH_MODE:-builtin}
+      AUTH_ROOT_USERNAME: ${AUTH_ROOT_USERNAME:-root}
+      AUTH_ROOT_PASSWORD: ${AUTH_ROOT_PASSWORD:-root}
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
     volumes: ["cache-data:/data"]
     ports: ["8080:8080"]
 
@@ -65,7 +74,11 @@ services:
     environment:
       # server-side (middleware) reads these at runtime; publishable also passed so the server has it
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_dummyplaceholderforbuildonly0000000000}
+      # CLERK_SECRET_KEY is the oidc/builtin switch for the dashboard middleware:
+      # when SET, middleware.ts runs Clerk auth. It MUST stay UNSET for the built-in
+      # AUTH_MODE (a stray dummy secret would redirect-loop every route to /sign-in).
+      # Set a real value only when you switch AUTH_MODE=oidc.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     ports: ["3000:3000"]
 
 volumes:
