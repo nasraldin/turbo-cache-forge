@@ -18,7 +18,7 @@ const shortHash = (h: string) => (h.length > 18 ? `${h.slice(0, 10)}…${h.slice
 const columns: Column<Artifact>[] = [
   { header: "Hash", cell: (a) => <code className="font-data text-sm" title={a.hash}>{shortHash(a.hash)}</code> },
   { header: "Size", cell: (a) => <span className="font-data">{formatBytes(a.size_bytes)}</span> },
-  { header: "Tag", cell: (a) => (a.tag ? <Badge variant="secondary">{a.tag}</Badge> : <span className="text-muted">—</span>) },
+  { header: "Tag", cell: (a) => (a.tag ? <Badge>{a.tag}</Badge> : <span className="text-muted">—</span>) },
   { header: "Created", cell: (a) => <span className="font-data text-muted">{new Date(a.created_at).toLocaleDateString()}</span> },
   { header: "Last accessed", cell: (a) => <span className="font-data text-muted">{new Date(a.last_accessed_at).toLocaleString()}</span> },
 ];
@@ -40,7 +40,7 @@ export default function ArtifactsPage() {
     <div>
       <PageHeader title="Artifacts" description="Cached build outputs stored for this organization." />
       {isError ? (
-        <p role="alert" className="rounded-md border border-danger/40 p-4 text-sm text-danger">
+        <p role="alert" className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running turbo-cache-forge.
         </p>
       ) : isLoading ? (
