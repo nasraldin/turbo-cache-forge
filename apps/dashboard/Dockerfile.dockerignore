@@ -1,0 +1,8 @@
+# Honored by the repo-root build context (context: ../..) for -f apps/dashboard/Dockerfile.
+# A plain apps/dashboard/.dockerignore is IGNORED with a root context; this name is the
+# Dockerfile-scoped ignore Docker/BuildKit reads. Globs (**/) are required because
+# context-root-relative bare `node_modules` would only match /node_modules, not the
+# nested workspace copies.
+**/node_modules
+**/.next
+**/.turbo
