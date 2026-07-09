@@ -18,15 +18,15 @@ export const metadata = { title: "turbo-cache-forge", description: "Remote cache
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <AuthRoot>
-      <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-        <body>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <body>
+        <AuthRoot>
           <QueryProvider>
             {children}
             <Toaster />
           </QueryProvider>
-        </body>
-      </html>
-    </AuthRoot>
+        </AuthRoot>
+      </body>
+    </html>
   );
 }

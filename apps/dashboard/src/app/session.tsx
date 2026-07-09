@@ -3,7 +3,6 @@ import { ClerkProvider, useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
