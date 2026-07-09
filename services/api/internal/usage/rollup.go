@@ -10,14 +10,21 @@ type Sink interface {
 }
 
 // Rollup drains the accumulator into the sink under today's UTC date.
+// A per-org write failure does not drop that org's counters: the delta is
+// re-absorbed into the accumulator so the next tick retries it, and Rollup
+// keeps writing the remaining orgs rather than aborting the whole batch.
+// The last error seen, if any, is returned for the caller to log.
 func Rollup(ctx context.Context, acc *Accumulator, sink Sink) error {
 	day := time.Now().UTC()
+	var lastErr error
 	for orgID, d := range acc.Drain() {
 		if err := sink.AddUsage(ctx, orgID, day, d.Up, d.Down, d.Hits, d.Misses); err != nil {
-			return err
+			acc.Add(orgID, d)
+			lastErr = err
+			continue
 		}
 	}
-	return nil
+	return lastErr
 }
 
 // Run rolls up on an interval until ctx is cancelled, then does a final drain.

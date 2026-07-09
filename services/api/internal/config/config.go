@@ -7,20 +7,20 @@ import (
 )
 
 type Config struct {
-	Addr           string
-	DatabaseURL    string
-	StorageBackend string // "fs" | "s3"
-	StoragePath    string
-	S3Bucket       string
-	S3Endpoint     string
-	S3Region       string
-	MaxUploadBytes int64
-	OIDCIssuer     string
-	OIDCJWKSURL    string
-	OIDCAudience   string
-	OIDCOrgClaim   string
-	RetentionDays  int
-	RollupIntervalSec int
+	Addr               string
+	DatabaseURL        string
+	StorageBackend     string // "fs" | "s3"
+	StoragePath        string
+	S3Bucket           string
+	S3Endpoint         string
+	S3Region           string
+	MaxUploadBytes     int64
+	OIDCIssuer         string
+	OIDCJWKSURL        string
+	OIDCAudience       string
+	OIDCOrgClaim       string
+	RetentionDays      int
+	RollupIntervalSec  int
 	CleanupIntervalSec int
 }
 

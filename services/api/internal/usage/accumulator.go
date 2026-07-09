@@ -43,6 +43,20 @@ func (a *Accumulator) Upload(orgID, bytesUp int64) {
 	a.mu.Unlock()
 }
 
+// Add folds d back into the accumulator under orgID, merging with any
+// activity that has arrived since a Drain. Used to re-absorb a org's delta
+// after a downstream write failure so it's retried on the next Rollup
+// instead of being lost.
+func (a *Accumulator) Add(orgID int64, d Delta) {
+	a.mu.Lock()
+	cur := a.at(orgID)
+	cur.Up += d.Up
+	cur.Down += d.Down
+	cur.Hits += d.Hits
+	cur.Misses += d.Misses
+	a.mu.Unlock()
+}
+
 // Drain returns accumulated deltas and resets. Values are copied out under lock.
 // ponytail: one global mutex; contention is a non-issue at 4 int64 adds per cache op. Shard only if a profile ever says so.
 func (a *Accumulator) Drain() map[int64]Delta {
