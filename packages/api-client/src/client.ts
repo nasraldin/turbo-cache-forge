@@ -1,4 +1,13 @@
-import type { ArtifactsPage, CreatedToken, Project, Stats, StatsPoint, Token } from "@tcf/types";
+import type {
+  ArtifactDetail,
+  ArtifactsPage,
+  ClearArtifactsResult,
+  CreatedToken,
+  Project,
+  Stats,
+  StatsPoint,
+  Token,
+} from "@tcf/types";
 
 export class ApiError extends Error {
   status: number;
@@ -48,6 +57,23 @@ export function createApiClient(opts: ApiClientOptions) {
       if (params?.offset) q.set("offset", String(params.offset));
       const suffix = q.toString() ? `?${q}` : "";
       return request<ArtifactsPage>(`/artifacts${suffix}`);
+    },
+    getArtifact: (hash: string) => request<ArtifactDetail>(`/artifacts/${encodeURIComponent(hash)}`),
+    deleteArtifact: (hash: string) =>
+      request<void>(`/artifacts/${encodeURIComponent(hash)}`, { method: "DELETE" }),
+    clearArtifacts: () => request<ClearArtifactsResult>("/artifacts", { method: "DELETE" }),
+    // Raw download needs the Bearer header, so it can't be a bare <a href>. The
+    // caller turns the Blob into an object-URL download.
+    getArtifactBlob: async (hash: string): Promise<Blob> => {
+      const token = await opts.getToken();
+      const res = await fetch(`${root}/artifacts/${encodeURIComponent(hash)}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new ApiError(res.status, text || `request failed: ${res.status}`);
+      }
+      return res.blob();
     },
     listTokens: () => request<Token[]>("/tokens"),
     createToken: (input: { name: string }) =>
