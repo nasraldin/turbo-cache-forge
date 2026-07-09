@@ -15,6 +15,20 @@ export function decodeExp(token: string): number | null {
   }
 }
 
+// decodeUsername reads the `username` claim so the shell can show who's signed
+// in without a round-trip (the root user is single-tenant, set server-side).
+export function decodeUsername(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    const claims = JSON.parse(json) as { username?: string };
+    return typeof claims.username === "string" ? claims.username : null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveToken(token: string): void {
   if (typeof window !== "undefined") window.localStorage.setItem(KEY, token);
 }

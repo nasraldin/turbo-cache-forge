@@ -22,7 +22,11 @@ export default function OverviewPage() {
 
   return (
     <div>
-      <PageHeader title="Overview" description="Live cache health from /api/v1." />
+      <PageHeader
+        eyebrow="Monitor"
+        title="Overview"
+        description="Your self-hosted Turborepo remote cache — track hit rate, storage, and the build work it's saving."
+      />
 
       {isError ? (
         <p
@@ -30,12 +34,12 @@ export default function OverviewPage() {
           className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
         >
           Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running
-          turbo-cache-forge.
+          Turbo Cache Forge.
         </p>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-5">
           {isEmpty && (
-            <p className="rounded-md border border-border bg-surface px-4 py-3 text-sm text-muted">
+            <p className="rounded-lg border border-border bg-surface px-4 py-3 text-sm text-muted shadow-sm">
               No cache activity yet. Run a build with{" "}
               <code className="font-data text-text">TURBO_TOKEN</code> set and hits will show up
               here.

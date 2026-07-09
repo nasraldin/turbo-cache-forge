@@ -46,7 +46,7 @@ export function BuiltinSignIn() {
               <span className="grid h-8 w-8 place-items-center rounded-md border border-border bg-surface-2">
                 <Activity className="h-4 w-4 text-hit" aria-hidden />
               </span>
-              <span className="text-lg font-semibold tracking-tight text-text">turbo-cache-forge</span>
+              <span className="text-lg font-semibold tracking-tight text-text">Turbo Cache Forge</span>
             </div>
           </div>
 
@@ -113,10 +113,6 @@ export function BuiltinSignIn() {
               Sign in
             </Button>
           </form>
-
-          <p className="font-data mt-6 text-center text-[11px] uppercase tracking-wide text-muted">
-            self-hosted · built-in auth
-          </p>
         </div>
       </Card>
     </div>

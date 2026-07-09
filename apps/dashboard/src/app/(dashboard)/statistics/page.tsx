@@ -34,7 +34,7 @@ export default function StatisticsPage() {
           className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
         >
           Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running
-          turbo-cache-forge.
+          Turbo Cache Forge.
         </p>
       </div>
     );

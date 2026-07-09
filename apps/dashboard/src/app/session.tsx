@@ -9,7 +9,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { clearToken, loadToken, login as builtinLogin } from "@/lib/builtin-auth";
+import {
+  clearToken,
+  decodeUsername,
+  loadToken,
+  login as builtinLogin,
+} from "@/lib/builtin-auth";
 
 export interface Session {
   mode: "oidc" | "builtin";
@@ -78,7 +83,7 @@ function BuiltinSessionProvider({ children }: { children: ReactNode }) {
         setToken(null);
         router.replace("/sign-in");
       },
-      userLabel: null,
+      userLabel: token ? decodeUsername(token) : null,
       login: async (username, password) => {
         const t = await builtinLogin(API_URL, username, password);
         setToken(t);

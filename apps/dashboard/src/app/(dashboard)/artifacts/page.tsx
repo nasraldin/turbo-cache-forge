@@ -41,7 +41,7 @@ export default function ArtifactsPage() {
       <PageHeader title="Artifacts" description="Cached build outputs stored for this organization." />
       {isError ? (
         <p role="alert" className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running turbo-cache-forge.
+          Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running Turbo Cache Forge.
         </p>
       ) : isLoading ? (
         <div className="space-y-2">

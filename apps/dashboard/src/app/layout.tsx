@@ -14,12 +14,24 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-export const metadata = { title: "turbo-cache-forge", description: "Remote cache dashboard" };
+export const metadata = {
+  title: "Turbo Cache Forge",
+  description: "Self-hosted Turborepo remote cache — dashboard",
+};
+
+// Sets the theme before first paint (no flash): an explicit choice wins, else
+// the OS preference. ThemeToggle keeps this attribute + localStorage in sync.
+const themeScript = `(function(){try{var t=localStorage.getItem('tcf.theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
       <body>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <AuthRoot>
           <QueryProvider>
             {children}

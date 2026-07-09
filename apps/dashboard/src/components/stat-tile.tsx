@@ -1,9 +1,9 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Reused by Overview (Task 4) and Storage Usage (Task 5) — one plain numeric
-// tile, no chart. The HIT/MISS meter is its own component (hit-meter.tsx);
-// this is the quiet supporting-tile primitive per the design brief.
+// A quiet supporting readout: instrument-label eyebrow, one big tabular value,
+// optional hint. The HIT/MISS meter is its own signature component
+// (hit-meter.tsx); this is the calm tile everything else is built from.
 export function StatTile({
   label,
   value,
@@ -16,18 +16,16 @@ export function StatTile({
   loading?: boolean;
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted">{label}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <Skeleton data-testid="stat-tile-skeleton" className="h-9 w-24" />
-        ) : (
-          <div className="font-data text-3xl font-semibold tracking-tight text-text">{value}</div>
-        )}
-        {hint && <p className="mt-1 font-data text-xs text-muted">{hint}</p>}
-      </CardContent>
+    <Card className="p-5 transition-colors hover:border-border-strong">
+      <span className="eyebrow block">{label}</span>
+      {loading ? (
+        <Skeleton data-testid="stat-tile-skeleton" className="mt-3 h-9 w-24" />
+      ) : (
+        <div className="mt-3 font-data text-[28px] font-semibold leading-none tracking-tight text-text">
+          {value}
+        </div>
+      )}
+      {hint && <p className="mt-2 font-data text-xs text-muted">{hint}</p>}
     </Card>
   );
 }
