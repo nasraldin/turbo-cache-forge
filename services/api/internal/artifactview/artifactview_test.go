@@ -109,3 +109,19 @@ func TestDecodeTruncatesAtEntryCap(t *testing.T) {
 		t.Fatalf("entries=%d truncated=%v, want %d & true", len(m.Entries), m.Truncated, maxEntries)
 	}
 }
+
+func TestDecodeTotalPreviewBudget(t *testing.T) {
+	content := strings.Repeat("x", maxPreviewBytes)
+	files := make(map[string]string, 10)
+	for i := 0; i < 10; i++ {
+		files["f"+strconv.Itoa(i)+".txt"] = content
+	}
+	m := Decode(bytes.NewReader(makeZstdTar(t, files, nil)))
+	total := 0
+	for _, e := range m.Entries {
+		total += len(e.Preview)
+	}
+	if total > maxTotalPreview {
+		t.Fatalf("summed preview bytes = %d, want <= %d (maxTotalPreview)", total, maxTotalPreview)
+	}
+}

@@ -68,7 +68,7 @@ func Decode(r io.Reader) Manifest {
 			Size:  hdr.Size,
 			IsDir: hdr.Typeflag == tar.TypeDir || (len(name) > 0 && name[len(name)-1] == '/'),
 		}
-		if !e.IsDir && hdr.Typeflag == tar.TypeReg && hdr.Size <= maxPreviewBytes && totalPreview < maxTotalPreview {
+		if !e.IsDir && hdr.Typeflag == tar.TypeReg && hdr.Size <= maxPreviewBytes && totalPreview+int(hdr.Size) <= maxTotalPreview {
 			buf := make([]byte, hdr.Size)
 			n, rerr := io.ReadFull(tr, buf)
 			if rerr == nil || errors.Is(rerr, io.ErrUnexpectedEOF) {
