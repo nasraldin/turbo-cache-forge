@@ -1,0 +1,17 @@
+{
+  "name": "@tcf/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint src --max-warnings 0 || true",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@tcf/types": "workspace:*" },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vitest": "2.1.2"
+  }
+}
