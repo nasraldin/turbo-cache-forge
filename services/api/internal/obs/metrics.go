@@ -1,6 +1,7 @@
 package obs
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -66,3 +67,20 @@ func (s *statusWriter) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// ReadFrom forwards to the wrapped ResponseWriter's ReadFrom when it has one
+// (http.response does, enabling the kernel sendfile/splice fast path for
+// *os.File sources). Embedding a bare http.ResponseWriter interface value
+// does NOT promote this method — promotion is based on the field's static
+// (interface) type, not whatever concrete writer sits behind it at runtime —
+// so this passthrough has to be explicit.
+func (s *statusWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := s.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(writerOnly{s.ResponseWriter}, r)
+}
+
+// writerOnly strips every interface but io.Writer so the fallback io.Copy
+// above can't recurse back into statusWriter.ReadFrom.
+type writerOnly struct{ io.Writer }
