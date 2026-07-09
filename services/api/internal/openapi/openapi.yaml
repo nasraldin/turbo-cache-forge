@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: turbo-cache-forge API
+  version: "1.0"
+  description: >
+    Two auth worlds. /v8/artifacts (Turbo protocol) uses hashed bearer tokens.
+    /api/v1 (management) uses OIDC-issued JWT bearer tokens.
+servers:
+  - url: /
+components:
+  securitySchemes:
+    turboToken:
+      type: http
+      scheme: bearer
+      description: Hashed API token (turbo_...) for the cache path.
+    oidcJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OIDC-issued JWT for /api/v1.
+paths:
+  /api/v1/tokens:
+    post:
+      summary: Create an API token (plaintext returned once)
+      security: [{ oidcJWT: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+                  token: { type: string, description: shown once, store securely }
+    get:
+      summary: List API tokens (no secrets)
+      security: [{ oidcJWT: [] }]
+      responses: { "200": { description: OK } }
+  /api/v1/tokens/{id}:
+    delete:
+      summary: Revoke an API token
+      security: [{ oidcJWT: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "204": { description: Revoked }, "404": { description: Not found } }
+  /api/v1/projects:
+    post:
+      summary: Create a project
+      security: [{ oidcJWT: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, name]
+              properties: { slug: { type: string, pattern: "^[a-z0-9-]+$" }, name: { type: string } }
+      responses: { "201": { description: Created } }
+    get:
+      summary: List projects
+      security: [{ oidcJWT: [] }]
+      responses: { "200": { description: OK } }
+  /api/v1/stats:
+    get:
+      summary: Org usage stats (storage, hit/miss, requests)
+      security: [{ oidcJWT: [] }]
+      responses: { "200": { description: OK } }
+  /api/v1/artifacts:
+    get:
+      summary: List cache artifacts (paginated)
+      security: [{ oidcJWT: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses: { "200": { description: OK } }
+  /v8/artifacts/status:
+    get:
+      summary: Turbo remote-cache status
+      security: [{ turboToken: [] }]
+      responses: { "200": { description: '{"status":"enabled"}' } }
+  /v8/artifacts/{hash}:
+    put:
+      summary: Upload an artifact
+      security: [{ turboToken: [] }]
+      parameters: [{ name: hash, in: path, required: true, schema: { type: string } }]
+      responses: { "202": { description: Accepted }, "413": { description: Too large } }
+    get:
+      summary: Download an artifact
+      security: [{ turboToken: [] }]
+      parameters: [{ name: hash, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: octet-stream }, "404": { description: Miss } }
