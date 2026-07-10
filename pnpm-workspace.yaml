@@ -2,3 +2,9 @@ packages:
   - "apps/*"
   - "!apps/example" # self-contained demo monorepo with its own workspace; run it on its own
   - "packages/*"
+
+# Force patched versions of transitive deps flagged by Dependabot.
+# (pnpm 10+ reads overrides from here, not package.json.)
+overrides:
+  postcss@<8.5.10: ">=8.5.10" # GHSA-qx2v-qp2m-jg93 (XSS via unescaped </style>)
+  esbuild@<0.28.1: ">=0.28.1" # GHSA-g7r4-m6w7-qqqr (dev-server file read on Windows)
