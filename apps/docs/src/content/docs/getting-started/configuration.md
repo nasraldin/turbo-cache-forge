@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Where config lives, the essential environment variables, and how to override Postgres credentials.
+description: Where config lives, the essential environment variables, DATABASE_URL schemes, and how to override Postgres credentials.
 ---
 
 Turbo Cache Forge is configured entirely through **environment variables**. There is
@@ -25,8 +25,8 @@ Copy `.env.example` to `infra/docker/.env` and edit from there.
 STORAGE_BACKEND=fs                 # fs | s3
 STORAGE_PATH=/data                 # where fs blobs live (a mounted volume)
 
-# Database
-DATABASE_URL=postgres://tcf:tcf@postgres:5432/tcf?sslmode=disable
+# Database (see "DATABASE_URL schemes" below — unset defaults to SQLite)
+DATABASE_URL=sqlite:///data/tcf.db
 
 # Auth (see the Authentication guide)
 AUTH_MODE=builtin                  # builtin | oidc
@@ -41,7 +41,30 @@ MAX_UPLOAD_BYTES=1073741824        # reject artifacts larger than this (1 GiB de
 For S3/R2/MinIO storage, see [Storage backends](/turbo-cache-forge/guides/storage-backends/).
 For OIDC (Clerk, Keycloak), see [Authentication](/turbo-cache-forge/guides/authentication/).
 
+## `DATABASE_URL` schemes
+
+The API self-migrates whichever store `DATABASE_URL` points at on boot — there's no
+separate migration step to run either way.
+
+| Value | Dialect | Notes |
+|---|---|---|
+| *(unset)* | SQLite | Defaults to `sqlite:///data/tcf.db` — a file inside the container's `/data` volume |
+| `sqlite:/path/to/file.db` | SQLite | Explicit file path; use an absolute path on a mounted volume so data survives restarts |
+| `postgres://user:pass@host:5432/db?sslmode=disable` | Postgres | Standard Postgres DSN; needed for multi-node deployments |
+
+The Compose default (`infra/docker/docker-compose.yml`) leaves `DATABASE_URL` unset,
+so it runs on embedded SQLite with zero external database. To run against Postgres
+instead, layer the overlay compose file, which sets `DATABASE_URL` to a `postgres://`
+DSN and starts a `postgres` service:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml \
+  -f infra/docker/docker-compose.postgres.yml up -d --build
+```
+
 ## Overriding Postgres credentials
+
+Only relevant if you're running the Postgres overlay described above.
 
 :::caution[The `.env` location gotcha]
 Docker Compose auto-loads `.env` from the **compose file's directory**

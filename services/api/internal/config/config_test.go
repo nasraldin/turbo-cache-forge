@@ -1,9 +1,41 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
 )
+
+func TestDatabaseURLDefaultsToSQLite(t *testing.T) {
+	// builtin auth is the compose default; set the minimum so Load() succeeds.
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("AUTH_MODE", "builtin")
+	t.Setenv("AUTH_ROOT_USERNAME", "root")
+	t.Setenv("AUTH_ROOT_PASSWORD", "root")
+	_ = os.Unsetenv("OIDC_ISSUER")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with empty DATABASE_URL should succeed, got %v", err)
+	}
+	if c.DatabaseURL != "sqlite:///data/tcf.db" {
+		t.Fatalf("default DatabaseURL = %q, want sqlite:///data/tcf.db", c.DatabaseURL)
+	}
+}
+
+func TestDatabaseURLRespectsExplicit(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://u:p@h:5432/db")
+	t.Setenv("AUTH_MODE", "builtin")
+	t.Setenv("AUTH_ROOT_USERNAME", "root")
+	t.Setenv("AUTH_ROOT_PASSWORD", "root")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DatabaseURL != "postgres://u:p@h:5432/db" {
+		t.Fatalf("explicit DATABASE_URL not honored: %q", c.DatabaseURL)
+	}
+}
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x")
@@ -19,13 +51,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.MaxUploadBytes != 1<<30 {
 		t.Errorf("MaxUploadBytes = %d, want %d", c.MaxUploadBytes, 1<<30)
-	}
-}
-
-func TestLoadRequiresDatabaseURL(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected error when DATABASE_URL is unset")
 	}
 }
 

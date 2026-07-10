@@ -43,16 +43,15 @@ type Config struct {
 func Load() (Config, error) {
 	c := Config{
 		Addr:           env("ADDR", ":8080"),
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		// Default to a self-migrating SQLite file (zero external setup). Point
+		// DATABASE_URL at postgres://… to use Postgres instead.
+		DatabaseURL:    env("DATABASE_URL", "sqlite:///data/tcf.db"),
 		StorageBackend: env("STORAGE_BACKEND", "fs"),
 		StoragePath:    env("STORAGE_PATH", "/var/lib/turbo-cache-forge"),
 		S3Bucket:       os.Getenv("STORAGE_S3_BUCKET"),
 		S3Endpoint:     os.Getenv("STORAGE_S3_ENDPOINT"),
 		S3Region:       env("STORAGE_S3_REGION", "auto"),
 		MaxUploadBytes: envInt("MAX_UPLOAD_BYTES", 1<<30), // 1 GiB
-	}
-	if c.DatabaseURL == "" {
-		return c, fmt.Errorf("DATABASE_URL is required")
 	}
 	if c.StorageBackend == "s3" && c.S3Bucket == "" {
 		return c, fmt.Errorf("STORAGE_S3_BUCKET is required when STORAGE_BACKEND=s3")

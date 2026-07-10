@@ -1,37 +1,14 @@
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tcf}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tcf}
-      POSTGRES_DB: ${POSTGRES_DB:-tcf}
-    # No published port: only cache-api and migrate reach Postgres, over the
-    # compose network. Nothing external needs direct DB access.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tcf}"]
-      interval: 2s
-      timeout: 3s
-      retries: 20
-
-  migrate:
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile
-      target: goose
-    depends_on:
-      postgres: { condition: service_healthy }
-    command: ["-dir", "/migrations", "postgres",
-      "postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable", "up"]
-
   cache-api:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
       target: cache-api
-    depends_on:
-      migrate: { condition: service_completed_successfully }
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable
+      # Default metadata store: a self-migrating SQLite file inside the
+      # persisted cache-data volume. No external database, no migrate step.
+      # Opt into Postgres with docker-compose.postgres.yml (see README).
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///data/tcf.db}
       STORAGE_BACKEND: fs
       STORAGE_PATH: /data
       # OIDC is off unless OIDC_ISSUER is set (then /api/v1 mounts). OIDC_ORG_ENABLED=false
@@ -46,17 +23,14 @@ services:
       # Defaults to the dashboard's dev origin so built-in-auth login works out of
       # the box; the browser POSTs credentials to /api/v1/auth/login cross-origin.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
-      # How often the in-memory hit/miss counters flush to usage_daily. Default 300s
-      # (prod); lowered here so dashboard stats update within seconds while testing.
       USAGE_ROLLUP_INTERVAL_SEC: ${USAGE_ROLLUP_INTERVAL_SEC:-15}
-      # Built-in auth (no external IdP): a single root user set here. The dashboard
-      # auto-detects this via GET /api/v1/auth/config and shows its password sign-in
-      # page. Switch to OIDC by setting AUTH_MODE=oidc + OIDC_ISSUER above.
       AUTH_MODE: ${AUTH_MODE:-builtin}
       AUTH_ROOT_USERNAME: ${AUTH_ROOT_USERNAME:-root}
       AUTH_ROOT_PASSWORD: ${AUTH_ROOT_PASSWORD:-root}
+      # Random per boot if left empty (sessions won't survive a restart or span
+      # replicas). Set a stable value here for persistent sessions.
       AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
-    volumes: ["cache-data:/data"]
+    volumes: ["cache-data:/data"] # holds both artifact blobs and tcf.db
     ports: ["8080:8080"]
 
   dashboard:
@@ -65,14 +39,11 @@ services:
       dockerfile: apps/dashboard/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
-        # publishable key is public + baked into the client bundle at build time
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk}
-        # false (default) hides <OrganizationSwitcher/>; set true only if Clerk orgs are enabled
         NEXT_PUBLIC_ORG_ENABLED: ${NEXT_PUBLIC_ORG_ENABLED:-false}
     depends_on:
       cache-api: { condition: service_started }
     environment:
-      # server-side (middleware) reads these at runtime; publishable also passed so the server has it
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk}
       # CLERK_SECRET_KEY is the oidc/builtin switch for the dashboard middleware:
       # when SET, middleware.ts runs Clerk auth. It MUST stay UNSET for the built-in

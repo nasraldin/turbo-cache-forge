@@ -12,7 +12,7 @@ where they live and the `.env` gotcha.
 | Variable | Default | Description |
 |---|---|---|
 | `ADDR` | `:8080` | Listen address |
-| `DATABASE_URL` | — | Postgres DSN (e.g. `postgres://tcf:tcf@postgres:5432/tcf?sslmode=disable`) |
+| `DATABASE_URL` | `sqlite:///data/tcf.db` | Empty/unset → SQLite at the default path; `sqlite:/path` → SQLite elsewhere; `postgres://user:pass@host:5432/db?sslmode=disable` → Postgres. See [Configuration](/turbo-cache-forge/getting-started/configuration/) |
 | `MAX_UPLOAD_BYTES` | `1073741824` | Reject artifacts larger than this (1 GiB) |
 | `REQUIRE_ARTIFACT_SIGNATURE` | `false` | Enforce Turbo artifact signatures on the cache path (see [Authentication → Signatures](/turbo-cache-forge/guides/authentication/)) |
 
@@ -28,10 +28,11 @@ where they live and the `.env` gotcha.
 | `STORAGE_S3_ACCESS_KEY` | — | Access key |
 | `STORAGE_S3_SECRET_KEY` | — | Secret key |
 
-## Postgres (Docker Compose)
+## Postgres (Docker Compose overlay, optional)
 
-Read by the `postgres` service in `infra/docker/docker-compose.yml`. Remember Compose
-loads `.env` from `infra/docker/`, not the repo root.
+Only used when running with the Postgres overlay (`infra/docker/docker-compose.postgres.yml`) —
+the default compose file needs none of these. Remember Compose loads `.env` from
+`infra/docker/`, not the repo root.
 
 | Variable | Default | Description |
 |---|---|---|

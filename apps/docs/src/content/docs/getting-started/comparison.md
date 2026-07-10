@@ -37,7 +37,7 @@ matter of changing `TURBO_API` and your token. You're never locked in.
 | Artifact signing | ✅ (round-trip + optional enforcement) | Managed | ✅ |
 | Read-only tokens | ✅ (per-token) | — | ✅ |
 | Management API + CLI | ✅ `/api/v1` + `turbo-cache` CLI | Vercel dashboard/API | ❌ |
-| Metadata store | Postgres (projects, usage, orgs) | Managed | None required |
+| Metadata store | **SQLite (default) · Postgres (optional)** | Managed | None required |
 | Language | Go (distroless image) | — (SaaS) | TypeScript / Fastify |
 | License | MIT | Proprietary service | MIT |
 | Maturity | New (2026) | Official, mature | Mature (~1.5k★, since 2021) |
@@ -68,8 +68,9 @@ Pick the tool that matches what you actually need — not the one with the most 
   error reporting are built in (ducktors offers logging only).
 - You want a **management API and CLI** to script tokens, projects, and stats
   (`/api/v1` + `turbo-cache`).
-- You value a **Postgres-backed model** with projects, per-day usage rollups, and a
-  multi-tenant organization structure.
+- You value a **relational metadata model** — projects, per-day usage rollups, and a
+  multi-tenant organization structure — backed by **SQLite by default** or **Postgres**
+  when you need multi-node scale.
 - You want CI-hardening controls: **per-token read-only** tokens (untrusted runners can
   pull but never poison the cache) and **artifact-signature enforcement** — on par with
   ducktors here.
@@ -81,6 +82,10 @@ larger community; if maturity is your top priority, that matters. We also **don'
 native GCS/Azure backends (we cover filesystem and any S3-compatible store) — if those are
 must-haves, ducktors is the better fit today. And if you don't need to self-host at all,
 Vercel's free managed cache is hard to beat on convenience.
+
+None of this requires a database to stand up: Turbo Cache Forge runs with **zero external
+database** by default (embedded SQLite, self-migrating), matching ducktors on setup
+simplicity — Postgres remains available as an opt-in for multi-node scale.
 
 Where Turbo Cache Forge is distinctly ahead is the **operator experience** — the dashboard,
 the metrics, and the management API/CLI. If you self-host and want visibility into your

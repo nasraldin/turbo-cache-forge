@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -22,6 +23,18 @@ import (
 	s3store "github.com/nasraldin/turbo-cache-forge/services/api/internal/storage/s3"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
+
+// redactDBURL removes credentials from a DATABASE_URL before logging. A path-
+// only URL (SQLite, no userinfo) is returned unchanged; a URL with user:password
+// (e.g. Postgres) has its password stripped so it never reaches logs.
+func redactDBURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = url.User(u.User.Username()) // keep username, drop password
+	return u.String()
+}
 
 func main() {
 	ctx := context.Background()
@@ -51,6 +64,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer repo.Close()
+	// Self-migrate on boot (embedded goose set for the active dialect). Makes
+	// the default SQLite deployment need no external migrate step; idempotent.
+	if err := repo.Migrate(ctx); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+	log.Printf("database ready (%s)", redactDBURL(cfg.DatabaseURL))
 
 	var store storage.Storage
 	switch cfg.StorageBackend {

@@ -1,10 +1,11 @@
 ---
 title: Quickstart
-description: Bring up Postgres, the cache API, and the dashboard with a single Docker Compose command.
+description: Bring up the cache API and the dashboard with a single Docker Compose command — no external database required.
 ---
 
-The fastest way to run the full stack — Postgres, migrations, the cache API, and the
-dashboard — is Docker Compose.
+The fastest way to run the full stack — the cache API and the dashboard — is Docker
+Compose. No external database is required: the API self-migrates an embedded
+**SQLite** file on boot.
 
 ## Prerequisites
 
@@ -19,25 +20,38 @@ cd turbo-cache-forge
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
-This starts four services:
+This starts two services:
 
 | Service | Port | Role |
 |---|---|---|
-| `postgres` | (internal only) | metadata store |
-| `migrate` | — | applies the schema, then exits |
 | `cache-api` | **8080** | Turbo v8 cache + `/api/v1` management API |
 | `dashboard` | **3000** | Next.js web console |
 
-Postgres is **not** published to the host — only `cache-api` and `migrate` reach it
-over the Compose network. The API runs as a non-root user (uid `65532`) in a
-distroless image and uses the filesystem storage backend (`STORAGE_BACKEND=fs`) by
-default.
+`cache-api` self-migrates its metadata store — an embedded **SQLite** file at
+`/data/tcf.db`, inside the persisted `cache-data` volume — on boot, so there's no
+separate migration step and no database service to run. The API runs as a non-root
+user (uid `65532`) in a distroless image and uses the filesystem storage backend
+(`STORAGE_BACKEND=fs`) by default.
+
+### Prefer Postgres?
+
+For multi-node deployments, add the Postgres overlay to run a `postgres` service and
+point `cache-api` at it instead (still self-migrating, no separate `migrate` step):
+
+```bash
+docker compose -f infra/docker/docker-compose.yml \
+  -f infra/docker/docker-compose.postgres.yml up -d --build
+```
+
+See [Configuration](/turbo-cache-forge/getting-started/configuration/) for the
+`DATABASE_URL` schemes (SQLite vs. Postgres).
 
 :::note[Docker Compose and `.env`]
 Compose auto-loads `.env` from the **compose file's directory** (`infra/docker/`),
 not the repo root. To change Postgres credentials or auth, put them in
 `infra/docker/.env` (copy [`.env.example`](/turbo-cache-forge/getting-started/configuration/)),
-or pass `--env-file`.
+or pass `--env-file`. The Postgres credentials part only applies if you're running
+the Postgres overlay described above.
 :::
 
 ## 2. Sign in to the dashboard

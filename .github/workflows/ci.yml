@@ -21,14 +21,17 @@ permissions:
   contents: read
 
 jobs:
-  # ---- Go: services/api (needs Postgres) + services/cli ----------------------
+  # ---- Go: services/api (sqlite + postgres dialects) + services/cli ----------
   go:
-    name: go (${{ matrix.module }})
+    name: go (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        module: [api, cli]
+        include:
+          - { name: cli, module: cli, db: none }
+          - { name: api-sqlite, module: api, db: sqlite }
+          - { name: api-postgres, module: api, db: postgres }
     services:
       postgres:
         image: postgres:16
@@ -44,29 +47,20 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache-dependency-path: services/${{ matrix.module }}/go.sum
-
-      # DB-backed repo tests self-skip unless TEST_DATABASE_URL is set. Apply the
-      # goose migrations first so the schema exists, then let the tests run.
-      - name: Apply migrations (api only)
-        if: matrix.module == 'api'
-        run: |
-          go install github.com/pressly/goose/v3/cmd/goose@v3.27.2
-          "$(go env GOPATH)/bin/goose" -dir infra/migrations postgres \
-            "postgres://tcf:tcf@localhost:5432/tcf?sslmode=disable" up
-
       - name: Vet
         working-directory: services/${{ matrix.module }}
         run: go vet ./...
-
       - name: Test
         working-directory: services/${{ matrix.module }}
         env:
-          TEST_DATABASE_URL: ${{ matrix.module == 'api' && 'postgres://tcf:tcf@localhost:5432/tcf?sslmode=disable' || '' }}
+          # api-postgres exercises the Postgres dialect; api-sqlite and cli use
+          # the built-in defaults (temp-file SQLite / no DB). The repo tests
+          # self-migrate, so no external goose step is needed.
+          TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgres://tcf:tcf@localhost:5432/tcf?sslmode=disable' || '' }}
         run: go test -race ./...
 
   # ---- JS: dashboard + docs + shared packages via Turborepo ------------------

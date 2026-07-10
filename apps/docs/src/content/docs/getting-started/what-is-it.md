@@ -31,9 +31,10 @@ Turbo Cache Forge is four surfaces around one Go server:
 | **Dashboard** | Next.js console: hit rate, storage, trends, artifacts | Humans (browser) |
 | **CLI** | `turbo-cache` — login, token/project create, stats, doctor | Operators (terminal) |
 
-Metadata (organizations, tokens, projects, usage) lives in **Postgres**. Artifact
-blobs go to a **pluggable storage backend**: the local filesystem by default, or any
-S3-compatible object store (AWS S3, Cloudflare R2, MinIO).
+Metadata (organizations, tokens, projects, usage) lives in **SQLite by default —
+zero setup, no external database** — or **Postgres** when you need multi-node
+scale. Artifact blobs go to a **pluggable storage backend**: the local filesystem
+by default, or any S3-compatible object store (AWS S3, Cloudflare R2, MinIO).
 
 ## What it is not
 
