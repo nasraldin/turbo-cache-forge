@@ -86,6 +86,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [go, js]
     if: github.event_name == 'push' && github.repository == 'nasraldin/turbo-cache-forge'
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io with the auto-provisioned GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
@@ -110,11 +113,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish to both registries — users pull from whichever they prefer. The
+      # image is built once and tagged for both; metadata-action fans the tag set
+      # across every name listed here.
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/nasraldin/turbo-cache-forge-${{ matrix.image.name }}
+          images: |
+            docker.io/nasraldin/turbo-cache-forge-${{ matrix.image.name }}
+            ghcr.io/nasraldin/turbo-cache-forge-${{ matrix.image.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-

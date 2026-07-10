@@ -52,14 +52,17 @@ Every pull request runs [`.github/workflows/ci.yml`](https://github.com/nasraldi
 
 ## Images & releases
 
-On push to `main` and on `v*` tags, [`.github/workflows/docker.yml`](https://github.com/nasraldin/turbo-cache-forge/blob/main/.github/workflows/docker.yml)
-builds and pushes three images to Docker Hub:
+On push to `main` and on `v*` tags — and only after the test jobs pass — the gated
+`docker` job in [`.github/workflows/ci.yml`](https://github.com/nasraldin/turbo-cache-forge/blob/main/.github/workflows/ci.yml)
+builds three images and pushes each to **both Docker Hub and GitHub Container Registry**:
 
-- `nasraldin/turbo-cache-forge-api`
-- `nasraldin/turbo-cache-forge-migrate`
-- `nasraldin/turbo-cache-forge-dashboard`
+- `nasraldin/turbo-cache-forge-{api,migrate,dashboard}` (Docker Hub)
+- `ghcr.io/nasraldin/turbo-cache-forge-{api,migrate,dashboard}` (ghcr.io)
 
-Tagged `latest` (main), `sha-<short>` (every commit), and semver on releases. Cross-compiled CLI binaries are produced by GoReleaser from `.goreleaser.yaml`.
+Tagged `latest` (main), `sha-<short>` (every commit), and semver on releases.
+Docker Hub needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets; ghcr.io uses the
+built-in `GITHUB_TOKEN`. Cross-compiled CLI binaries are produced by GoReleaser from
+`.goreleaser.yaml`.
 
 ## Docs
 

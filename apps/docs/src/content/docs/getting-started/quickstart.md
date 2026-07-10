@@ -79,10 +79,14 @@ docker compose -f infra/docker/docker-compose.yml down -v   # -v also removes ca
 
 ## Prefer prebuilt images?
 
-Every push to `main` publishes images to Docker Hub, so you can skip the build step:
+Every push to `main` publishes images to **both Docker Hub and GitHub Container
+Registry (ghcr.io)** — pull from whichever you prefer:
 
-- `nasraldin/turbo-cache-forge-api`
-- `nasraldin/turbo-cache-forge-migrate`
-- `nasraldin/turbo-cache-forge-dashboard`
+| Image | Docker Hub | GitHub Container Registry |
+|---|---|---|
+| API | `nasraldin/turbo-cache-forge-api` | `ghcr.io/nasraldin/turbo-cache-forge-api` |
+| Migrator | `nasraldin/turbo-cache-forge-migrate` | `ghcr.io/nasraldin/turbo-cache-forge-migrate` |
+| Dashboard | `nasraldin/turbo-cache-forge-dashboard` | `ghcr.io/nasraldin/turbo-cache-forge-dashboard` |
 
-Tags: `latest` (main), `sha-<short>` (every commit), and semver on releases.
+Both registries carry identical images and tags: `latest` (main), `sha-<short>`
+(every commit), and semver on releases.

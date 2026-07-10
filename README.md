@@ -72,7 +72,9 @@ curl -s -H "Authorization: Bearer $TURBO_TOKEN" \
 ```
 
 Full walkthrough → **[Quickstart](https://nasraldin.github.io/turbo-cache-forge/getting-started/quickstart/)**.
-Prefer prebuilt images? Pull `nasraldin/turbo-cache-forge-{api,migrate,dashboard}` from Docker Hub.
+Prefer prebuilt images? Pull `turbo-cache-forge-{api,migrate,dashboard}` from **Docker Hub**
+(`nasraldin/…`) or **GitHub Container Registry** (`ghcr.io/nasraldin/…`) — both carry
+identical images.
 
 ## Features
 
