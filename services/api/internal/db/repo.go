@@ -3,13 +3,18 @@ package db
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io/fs"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
+	_ "modernc.org/sqlite"             // database/sql driver "sqlite"
 
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db/migrations"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
 )
 
@@ -27,31 +32,62 @@ type Org struct {
 	ReadOnly bool
 }
 
-type Repo struct{ pool *pgxpool.Pool }
+type Repo struct {
+	db *sql.DB
+	d  dialect
+}
 
-func Open(ctx context.Context, url string) (*Repo, error) {
-	pool, err := pgxpool.New(ctx, url)
+// Open connects using the driver implied by the URL scheme (see parseURL).
+// SQLite gets a single connection (WAL + busy_timeout serialize writes);
+// Postgres keeps database/sql pool defaults.
+func Open(_ context.Context, url string) (*Repo, error) {
+	driver, dsn, err := parseURL(url)
 	if err != nil {
 		return nil, err
 	}
-	return &Repo{pool: pool}, nil
+	sqlDB, err := sql.Open(driver, dsn)
+	if err != nil {
+		return nil, err
+	}
+	if driver == "sqlite" {
+		sqlDB.SetMaxOpenConns(1) // ponytail: single writer; multi-node -> Postgres
+	}
+	return &Repo{db: sqlDB, d: dialectFor(driver)}, nil
 }
 
-func (r *Repo) Close()                         { r.pool.Close() }
-func (r *Repo) Ping(ctx context.Context) error { return r.pool.Ping(ctx) }
+func (r *Repo) Close()                         { _ = r.db.Close() }
+func (r *Repo) Ping(ctx context.Context) error { return r.db.PingContext(ctx) }
+
+// Migrate runs the embedded goose migration set for this repo's dialect. Called
+// once on boot; idempotent. Uses goose's instance-based Provider (no globals).
+func (r *Repo) Migrate(ctx context.Context) error {
+	sub, err := fs.Sub(migrations.FS, r.d.name) // "postgres" | "sqlite"
+	if err != nil {
+		return err
+	}
+	gd := goose.DialectPostgres
+	if !r.d.isPG {
+		gd = goose.DialectSQLite3
+	}
+	p, err := goose.NewProvider(gd, r.db, sub)
+	if err != nil {
+		return err
+	}
+	_, err = p.Up(ctx)
+	return err
+}
 
 func (r *Repo) OrgByTokenHash(ctx context.Context, hash string) (org *Org, err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.OrgByTokenHash")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT o.id, o.slug, k.read_only FROM api_keys k
+	q := r.d.rebind(`SELECT o.id, o.slug, k.read_only FROM api_keys k
 	           JOIN organizations o ON o.id = k.org_id
-	           WHERE k.token_hash = $1 AND k.revoked_at IS NULL`
+	           WHERE k.token_hash = ? AND k.revoked_at IS NULL`)
 	var o Org
-	err = r.pool.QueryRow(ctx, q, hash).Scan(&o.ID, &o.Slug, &o.ReadOnly)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = ErrUnauthorized
-		return nil, err
+	err = r.db.QueryRowContext(ctx, q, hash).Scan(&o.ID, &o.Slug, &o.ReadOnly)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUnauthorized
 	}
 	if err != nil {
 		return nil, err
@@ -63,13 +99,13 @@ func (r *Repo) UpsertArtifact(ctx context.Context, orgID int64, hash string, siz
 	ctx, span := obs.StartDBSpan(ctx, "db.UpsertArtifact")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `INSERT INTO cache_artifacts (org_id, hash, size_bytes, artifact_tag)
-	           VALUES ($1, $2, $3, NULLIF($4,''))
+	q := r.d.rebind(fmt.Sprintf(`INSERT INTO cache_artifacts (org_id, hash, size_bytes, artifact_tag)
+	           VALUES (?, ?, ?, NULLIF(?,''))
 	           ON CONFLICT (org_id, hash) DO UPDATE
-	             SET size_bytes = EXCLUDED.size_bytes,
-	                 artifact_tag = EXCLUDED.artifact_tag,
-	                 last_accessed_at = now()`
-	_, err = r.pool.Exec(ctx, q, orgID, hash, size, tag)
+	             SET size_bytes = excluded.size_bytes,
+	                 artifact_tag = excluded.artifact_tag,
+	                 last_accessed_at = %s`, r.d.now))
+	_, err = r.db.ExecContext(ctx, q, orgID, hash, size, tag)
 	return err
 }
 
@@ -77,8 +113,8 @@ func (r *Repo) ArtifactExists(ctx context.Context, orgID int64, hash string) (ex
 	ctx, span := obs.StartDBSpan(ctx, "db.ArtifactExists")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT EXISTS(SELECT 1 FROM cache_artifacts WHERE org_id=$1 AND hash=$2)`
-	err = r.pool.QueryRow(ctx, q, orgID, hash).Scan(&exists)
+	q := r.d.rebind(`SELECT EXISTS(SELECT 1 FROM cache_artifacts WHERE org_id=? AND hash=?)`)
+	err = r.db.QueryRowContext(ctx, q, orgID, hash).Scan(&exists)
 	return exists, err
 }
 
@@ -86,8 +122,8 @@ func (r *Repo) TouchArtifact(ctx context.Context, orgID int64, hash string) (err
 	ctx, span := obs.StartDBSpan(ctx, "db.TouchArtifact")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `UPDATE cache_artifacts SET last_accessed_at = now() WHERE org_id=$1 AND hash=$2`
-	_, err = r.pool.Exec(ctx, q, orgID, hash)
+	q := r.d.rebind(fmt.Sprintf(`UPDATE cache_artifacts SET last_accessed_at = %s WHERE org_id=? AND hash=?`, r.d.now))
+	_, err = r.db.ExecContext(ctx, q, orgID, hash)
 	return err
 }
 
@@ -99,9 +135,9 @@ func (r *Repo) ArtifactTag(ctx context.Context, orgID int64, hash string) (tag s
 	ctx, span := obs.StartDBSpan(ctx, "db.ArtifactTag")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT COALESCE(artifact_tag,'') FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
-	err = r.pool.QueryRow(ctx, q, orgID, hash).Scan(&tag)
-	if errors.Is(err, pgx.ErrNoRows) {
+	q := r.d.rebind(`SELECT COALESCE(artifact_tag,'') FROM cache_artifacts WHERE org_id=? AND hash=?`)
+	err = r.db.QueryRowContext(ctx, q, orgID, hash).Scan(&tag)
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	return tag, err
@@ -122,16 +158,18 @@ func (r *Repo) EnsureOrgByIdpID(ctx context.Context, idpOrgID, name string) (org
 	if name == "" {
 		name = idpOrgID
 	}
-	const q = `INSERT INTO organizations (idp_org_id, slug, name)
-	           VALUES ($1, $2, $3)
-	           ON CONFLICT (idp_org_id) DO UPDATE SET idp_org_id = EXCLUDED.idp_org_id
-	           RETURNING id, slug, idp_org_id`
+	q := r.d.rebind(`INSERT INTO organizations (idp_org_id, slug, name)
+	           VALUES (?, ?, ?)
+	           ON CONFLICT (idp_org_id) DO UPDATE SET idp_org_id = excluded.idp_org_id
+	           RETURNING id, slug, idp_org_id`)
 	var o Org
-	err = r.pool.QueryRow(ctx, q, idpOrgID, orgSlugFor(idpOrgID), name).
-		Scan(&o.ID, &o.Slug, &o.IdpOrgID)
+	var idp sql.NullString
+	err = r.db.QueryRowContext(ctx, q, idpOrgID, orgSlugFor(idpOrgID), name).
+		Scan(&o.ID, &o.Slug, &idp)
 	if err != nil {
 		return nil, err
 	}
+	o.IdpOrgID = idp.String
 	return &o, nil
 }
 
@@ -152,8 +190,8 @@ func (r *Repo) CreateToken(ctx context.Context, orgID int64, name, tokenHash str
 	ctx, span := obs.StartDBSpan(ctx, "db.CreateToken")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `INSERT INTO api_keys (org_id, name, token_hash, read_only) VALUES ($1, $2, $3, $4) RETURNING id`
-	err = r.pool.QueryRow(ctx, q, orgID, name, tokenHash, readOnly).Scan(&id)
+	q := r.d.rebind(`INSERT INTO api_keys (org_id, name, token_hash, read_only) VALUES (?, ?, ?, ?) RETURNING id`)
+	err = r.db.QueryRowContext(ctx, q, orgID, name, tokenHash, readOnly).Scan(&id)
 	return id, err
 }
 
@@ -162,9 +200,9 @@ func (r *Repo) ListTokens(ctx context.Context, orgID int64) (keys []APIKey, err 
 	ctx, span := obs.StartDBSpan(ctx, "db.ListTokens")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT id, name, project_id, read_only, last_used_at, created_at, revoked_at
-	           FROM api_keys WHERE org_id = $1 ORDER BY created_at DESC`
-	rows, err := r.pool.Query(ctx, q, orgID)
+	q := r.d.rebind(`SELECT id, name, project_id, read_only, last_used_at, created_at, revoked_at
+	           FROM api_keys WHERE org_id = ? ORDER BY created_at DESC`)
+	rows, err := r.db.QueryContext(ctx, q, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +214,7 @@ func (r *Repo) ListTokens(ctx context.Context, orgID int64) (keys []APIKey, err 
 		}
 		keys = append(keys, k)
 	}
-	err = rows.Err()
-	return keys, err
+	return keys, rows.Err()
 }
 
 // RevokeToken sets revoked_at; org-scoped so a token can't revoke another org's key.
@@ -185,13 +222,14 @@ func (r *Repo) RevokeToken(ctx context.Context, orgID, tokenID int64) (ok bool, 
 	ctx, span := obs.StartDBSpan(ctx, "db.RevokeToken")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `UPDATE api_keys SET revoked_at = now()
-	           WHERE id = $1 AND org_id = $2 AND revoked_at IS NULL`
-	tag, err := r.pool.Exec(ctx, q, tokenID, orgID)
+	q := r.d.rebind(fmt.Sprintf(`UPDATE api_keys SET revoked_at = %s
+	           WHERE id = ? AND org_id = ? AND revoked_at IS NULL`, r.d.now))
+	res, err := r.db.ExecContext(ctx, q, tokenID, orgID)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 type Project struct {
@@ -205,9 +243,9 @@ func (r *Repo) CreateProject(ctx context.Context, orgID int64, slug, name string
 	ctx, span := obs.StartDBSpan(ctx, "db.CreateProject")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `INSERT INTO projects (org_id, slug, name) VALUES ($1, $2, $3)
-	           RETURNING id, slug, name, created_at`
-	err = r.pool.QueryRow(ctx, q, orgID, slug, name).Scan(&proj.ID, &proj.Slug, &proj.Name, &proj.CreatedAt)
+	q := r.d.rebind(`INSERT INTO projects (org_id, slug, name) VALUES (?, ?, ?)
+	           RETURNING id, slug, name, created_at`)
+	err = r.db.QueryRowContext(ctx, q, orgID, slug, name).Scan(&proj.ID, &proj.Slug, &proj.Name, &proj.CreatedAt)
 	return proj, err
 }
 
@@ -215,8 +253,8 @@ func (r *Repo) ListProjects(ctx context.Context, orgID int64) (projects []Projec
 	ctx, span := obs.StartDBSpan(ctx, "db.ListProjects")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT id, slug, name, created_at FROM projects WHERE org_id = $1 ORDER BY name`
-	rows, err := r.pool.Query(ctx, q, orgID)
+	q := r.d.rebind(`SELECT id, slug, name, created_at FROM projects WHERE org_id = ? ORDER BY name`)
+	rows, err := r.db.QueryContext(ctx, q, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,8 +266,7 @@ func (r *Repo) ListProjects(ctx context.Context, orgID int64) (projects []Projec
 		}
 		projects = append(projects, p)
 	}
-	err = rows.Err()
-	return projects, err
+	return projects, rows.Err()
 }
 
 type Stats struct {
@@ -246,14 +283,14 @@ func (r *Repo) Stats(ctx context.Context, orgID int64) (s Stats, err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.Stats")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q1 = `SELECT COALESCE(SUM(size_bytes),0), COUNT(*) FROM cache_artifacts WHERE org_id=$1`
-	if err = r.pool.QueryRow(ctx, q1, orgID).Scan(&s.StorageBytes, &s.ArtifactCount); err != nil {
+	q1 := r.d.rebind(`SELECT COALESCE(SUM(size_bytes),0), COUNT(*) FROM cache_artifacts WHERE org_id=?`)
+	if err = r.db.QueryRowContext(ctx, q1, orgID).Scan(&s.StorageBytes, &s.ArtifactCount); err != nil {
 		return s, err
 	}
-	const q2 = `SELECT COALESCE(SUM(hits),0), COALESCE(SUM(misses),0),
+	q2 := r.d.rebind(`SELECT COALESCE(SUM(hits),0), COALESCE(SUM(misses),0),
 	                   COALESCE(SUM(bytes_up),0), COALESCE(SUM(bytes_down),0)
-	            FROM usage_daily WHERE org_id=$1`
-	if err = r.pool.QueryRow(ctx, q2, orgID).Scan(&s.Hits, &s.Misses, &s.BytesUp, &s.BytesDown); err != nil {
+	            FROM usage_daily WHERE org_id=?`)
+	if err = r.db.QueryRowContext(ctx, q2, orgID).Scan(&s.Hits, &s.Misses, &s.BytesUp, &s.BytesDown); err != nil {
 		return s, err
 	}
 	s.Requests = s.Hits + s.Misses
@@ -276,11 +313,23 @@ func (r *Repo) StatsSeries(ctx context.Context, orgID int64, days int) (pts []St
 	ctx, span := obs.StartDBSpan(ctx, "db.StatsSeries")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT to_char(day,'YYYY-MM-DD'), hits, misses, bytes_up, bytes_down
-	           FROM usage_daily
-	           WHERE org_id=$1 AND day >= CURRENT_DATE - $2::int
-	           ORDER BY day`
-	rows, err := r.pool.Query(ctx, q, orgID, days)
+	var q string
+	var args []any
+	if r.d.isPG {
+		q = r.d.rebind(`SELECT to_char(day,'YYYY-MM-DD'), hits, misses, bytes_up, bytes_down
+		           FROM usage_daily
+		           WHERE org_id=? AND day >= CURRENT_DATE - ?::int
+		           ORDER BY day`)
+		args = []any{orgID, days}
+	} else {
+		// day is TEXT 'YYYY-MM-DD'; window bound via date('now','-N days').
+		q = `SELECT day, hits, misses, bytes_up, bytes_down
+		     FROM usage_daily
+		     WHERE org_id=? AND day >= date('now', ?)
+		     ORDER BY day`
+		args = []any{orgID, fmt.Sprintf("-%d days", days)}
+	}
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -307,10 +356,10 @@ func (r *Repo) ListArtifacts(ctx context.Context, orgID int64, limit, offset int
 	ctx, span := obs.StartDBSpan(ctx, "db.ListArtifacts")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
-	           FROM cache_artifacts WHERE org_id=$1
-	           ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	rows, err := r.pool.Query(ctx, q, orgID, limit, offset)
+	q := r.d.rebind(`SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
+	           FROM cache_artifacts WHERE org_id=?
+	           ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+	rows, err := r.db.QueryContext(ctx, q, orgID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -322,24 +371,31 @@ func (r *Repo) ListArtifacts(ctx context.Context, orgID int64, limit, offset int
 		}
 		artifacts = append(artifacts, a)
 	}
-	err = rows.Err()
-	return artifacts, err
+	return artifacts, rows.Err()
 }
 
-// AddUsage accumulates daily usage counters; idempotent within a day via
-// ON CONFLICT accumulation (safe to call multiple times per day).
+// AddUsage accumulates daily usage counters. Postgres casts the day param to
+// date; SQLite stores it as a 'YYYY-MM-DD' TEXT key. Both accumulate via
+// ON CONFLICT so the call is idempotent within a day.
 func (r *Repo) AddUsage(ctx context.Context, orgID int64, day time.Time, up, down, hits, misses int64) (err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.AddUsage")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `INSERT INTO usage_daily (org_id, day, bytes_up, bytes_down, hits, misses)
-	           VALUES ($1, $2::date, $3, $4, $5, $6)
+	var dayArg any
+	var dayExpr string
+	if r.d.isPG {
+		dayArg, dayExpr = day, "?::date"
+	} else {
+		dayArg, dayExpr = day.UTC().Format("2006-01-02"), "?"
+	}
+	q := r.d.rebind(fmt.Sprintf(`INSERT INTO usage_daily (org_id, day, bytes_up, bytes_down, hits, misses)
+	           VALUES (?, %s, ?, ?, ?, ?)
 	           ON CONFLICT (org_id, day) DO UPDATE SET
-	             bytes_up   = usage_daily.bytes_up   + EXCLUDED.bytes_up,
-	             bytes_down = usage_daily.bytes_down + EXCLUDED.bytes_down,
-	             hits       = usage_daily.hits       + EXCLUDED.hits,
-	             misses     = usage_daily.misses     + EXCLUDED.misses`
-	_, err = r.pool.Exec(ctx, q, orgID, day, up, down, hits, misses)
+	             bytes_up   = usage_daily.bytes_up   + excluded.bytes_up,
+	             bytes_down = usage_daily.bytes_down + excluded.bytes_down,
+	             hits       = usage_daily.hits       + excluded.hits,
+	             misses     = usage_daily.misses     + excluded.misses`, dayExpr))
+	_, err = r.db.ExecContext(ctx, q, orgID, dayArg, up, down, hits, misses)
 	return err
 }
 
@@ -349,19 +405,18 @@ type ExpiredArtifact struct {
 	Hash    string
 }
 
-// ExpiredArtifacts is batched (limit) so a huge backlog drains over ticks
-// instead of loading everything at once. Not org-scoped by design: it's a
-// system-wide cron scan, and each row carries its own OrgID/OrgSlug so the
-// caller stays tenant-aware when deleting.
+// ExpiredArtifacts is batched (limit) and system-wide (not org-scoped). The
+// cutoff is bound in a dialect-matching format so the '<' comparison is correct
+// on both engines (Postgres timestamptz vs SQLite ISO-8601 text).
 func (r *Repo) ExpiredArtifacts(ctx context.Context, cutoff time.Time, limit int) (out []ExpiredArtifact, err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.ExpiredArtifacts")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT a.org_id, o.slug, a.hash
+	q := r.d.rebind(`SELECT a.org_id, o.slug, a.hash
 	           FROM cache_artifacts a JOIN organizations o ON o.id = a.org_id
-	           WHERE a.last_accessed_at < $1
-	           ORDER BY a.last_accessed_at LIMIT $2`
-	rows, err := r.pool.Query(ctx, q, cutoff, limit)
+	           WHERE a.last_accessed_at < ?
+	           ORDER BY a.last_accessed_at LIMIT ?`)
+	rows, err := r.db.QueryContext(ctx, q, r.timeArg(cutoff), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -373,16 +428,25 @@ func (r *Repo) ExpiredArtifacts(ctx context.Context, cutoff time.Time, limit int
 		}
 		out = append(out, e)
 	}
-	err = rows.Err()
-	return out, err
+	return out, rows.Err()
+}
+
+// timeArg formats a timestamp for a bound parameter: a time.Time for Postgres,
+// and the CURRENT_TIMESTAMP text format ('YYYY-MM-DD HH:MM:SS' UTC) for SQLite
+// so lexicographic comparison against stored values is chronological.
+func (r *Repo) timeArg(t time.Time) any {
+	if r.d.isPG {
+		return t
+	}
+	return t.UTC().Format("2006-01-02 15:04:05")
 }
 
 func (r *Repo) DeleteArtifact(ctx context.Context, orgID int64, hash string) (err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.DeleteArtifact")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `DELETE FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
-	_, err = r.pool.Exec(ctx, q, orgID, hash)
+	q := r.d.rebind(`DELETE FROM cache_artifacts WHERE org_id=? AND hash=?`)
+	_, err = r.db.ExecContext(ctx, q, orgID, hash)
 	return err
 }
 
@@ -390,10 +454,10 @@ func (r *Repo) GetArtifact(ctx context.Context, orgID int64, hash string) (a Art
 	ctx, span := obs.StartDBSpan(ctx, "db.GetArtifact")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
-	           FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
-	err = r.pool.QueryRow(ctx, q, orgID, hash).Scan(&a.Hash, &a.SizeBytes, &a.Tag, &a.CreatedAt, &a.LastAccessedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	q := r.d.rebind(`SELECT hash, size_bytes, artifact_tag, created_at, last_accessed_at
+	           FROM cache_artifacts WHERE org_id=? AND hash=?`)
+	err = r.db.QueryRowContext(ctx, q, orgID, hash).Scan(&a.Hash, &a.SizeBytes, &a.Tag, &a.CreatedAt, &a.LastAccessedAt)
+	if errors.Is(err, sql.ErrNoRows) {
 		return Artifact{}, ErrArtifactNotFound
 	}
 	return a, err
@@ -405,8 +469,8 @@ func (r *Repo) ListArtifactHashes(ctx context.Context, orgID int64) (hashes []st
 	ctx, span := obs.StartDBSpan(ctx, "db.ListArtifactHashes")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT hash FROM cache_artifacts WHERE org_id=$1`
-	rows, err := r.pool.Query(ctx, q, orgID)
+	q := r.d.rebind(`SELECT hash FROM cache_artifacts WHERE org_id=?`)
+	rows, err := r.db.QueryContext(ctx, q, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -425,10 +489,18 @@ func (r *Repo) DeleteAllArtifacts(ctx context.Context, orgID int64) (n int64, er
 	ctx, span := obs.StartDBSpan(ctx, "db.DeleteAllArtifacts")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `DELETE FROM cache_artifacts WHERE org_id=$1`
-	tag, err := r.pool.Exec(ctx, q, orgID)
+	q := r.d.rebind(`DELETE FROM cache_artifacts WHERE org_id=?`)
+	res, err := r.db.ExecContext(ctx, q, orgID)
 	if err != nil {
 		return 0, err
 	}
-	return tag.RowsAffected(), nil
+	return res.RowsAffected()
+}
+
+// setLastAccessedForTest back-dates an artifact's last_accessed_at. Test-only
+// helper (exercised by TestExpiredArtifacts); dialect-aware via timeArg.
+func (r *Repo) setLastAccessedForTest(ctx context.Context, orgID int64, hash string, t time.Time) error {
+	q := r.d.rebind(`UPDATE cache_artifacts SET last_accessed_at = ? WHERE org_id=? AND hash=?`)
+	_, err := r.db.ExecContext(ctx, q, r.timeArg(t), orgID, hash)
+	return err
 }
