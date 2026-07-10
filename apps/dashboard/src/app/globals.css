@@ -3,46 +3,68 @@
 @tailwind utilities;
 
 /*
- * Design tokens — see .superpowers/sdd/design-brief.md.
- * "Instrument panel for a build cache": HIT (teal) vs MISS (amber) is the
- * through-line; danger red is reserved for destructive actions only.
- * Dark is the default theme; light is an explicit override (both required).
+ * Design tokens — a "control room" telemetry console for a build cache.
+ * HIT (teal) vs MISS (amber) is the through-line; danger red is reserved for
+ * destructive actions only. Dark is the default theme; light is an explicit
+ * override (both required). Elevation is measured: flat panels are the base,
+ * shadows lift only the chrome that floats (top bar, drawer, hover).
  */
 :root {
-  --bg: #0e1116;
-  --surface: #161b22;
-  --surface-2: #1c222b;
-  --border: #232a34;
-  --text: #e6edf3;
-  --muted: #8b98a9;
-  --hit: #3fb98c;
-  --miss: #e0863a;
-  --danger: #e5534b;
+  --bg: #0a0d12;
+  --surface: #10151c;
+  --surface-2: #171d26;
+  --elevated: #1d2530;
+  --border: #222a35;
+  --border-strong: #313b49;
+  --text: #e9eff6;
+  --muted: #94a2b4;
+  --faint: #5c6675;
+  --hit: #34c48d;
+  --miss: #eb9142;
+  --danger: #ef5f57;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 30px -12px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.75);
 }
 
 :root[data-theme="light"] {
-  --bg: #fbfcfd;
+  --bg: #f5f7fa;
   --surface: #ffffff;
-  --surface-2: #f3f5f8;
-  --border: #e4e8ee;
-  --text: #0e1116;
-  --muted: #5a6675;
-  --hit: #1f9e72;
-  --miss: #c26a1e;
+  --surface-2: #eef2f7;
+  --elevated: #ffffff;
+  --border: #e3e8ef;
+  --border-strong: #d0d8e2;
+  --text: #0d1117;
+  --muted: #556174;
+  --faint: #8b97a7;
+  --hit: #12916a;
+  --miss: #bd6519;
   --danger: #c6413a;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #fbfcfd;
+    --bg: #f5f7fa;
     --surface: #ffffff;
-    --surface-2: #f3f5f8;
-    --border: #e4e8ee;
-    --text: #0e1116;
-    --muted: #5a6675;
-    --hit: #1f9e72;
-    --miss: #c26a1e;
+    --surface-2: #eef2f7;
+    --elevated: #ffffff;
+    --border: #e3e8ef;
+    --border-strong: #d0d8e2;
+    --text: #0d1117;
+    --muted: #556174;
+    --faint: #8b97a7;
+    --hit: #12916a;
+    --miss: #bd6519;
     --danger: #c6413a;
+
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
+    --shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
   }
 }
 
@@ -58,6 +80,8 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Machine values (rates, byte counts, hashes, tokens) — always mono, tabular. */
@@ -66,10 +90,71 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Visible keyboard focus ring in the --hit accent, per the design brief's quality floor. */
+/*
+ * The instrument-label: the console's signature typographic device. Mono,
+ * uppercase, tracked — every panel and section is headed like a telemetry
+ * readout, which is exactly what they are.
+ */
+.eyebrow {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.6875rem;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--faint);
+}
+
+/* Visible keyboard focus ring in the --hit accent, per the design quality floor. */
 :focus-visible {
   outline: 2px solid var(--hit);
   outline-offset: 2px;
+}
+
+/* Signature motion — one orchestrated moment on load; quiet everywhere else. */
+@keyframes tcf-sweep {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes tcf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes tcf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-sweep {
+  transform-origin: left;
+  animation: tcf-sweep 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-pulse-dot {
+  animation: tcf-pulse 2.4s ease-in-out infinite;
+}
+
+.animate-rise {
+  animation: tcf-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,11 +1,10 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPercent } from "@/lib/format";
 
-// THE signature element (design brief): hit-rate as a large tabular-mono %
-// beside a horizontal hit(teal)/miss(amber) bar. Large here on Overview (the
-// hero); a slim variant echoes on stat tiles / the trend page in later tasks
-// — kept as its own component now so that reuse doesn't require a rewrite.
+// THE signature element: hit-rate as a huge tabular-mono %, over a segmented
+// hit(teal)/miss(amber) gauge that sweeps in on load — the one orchestrated
+// moment. Reduced-motion neutralizes the sweep globally.
 export function HitMeter({
   hits,
   misses,
@@ -20,38 +19,65 @@ export function HitMeter({
   const hitPct = ratio * 100;
 
   return (
-    <Card>
-      <CardContent className="p-6">
-        {loading ? (
-          <div className="space-y-4">
-            <Skeleton data-testid="hit-meter-skeleton" className="h-14 w-40" />
-            <Skeleton className="h-3 w-full rounded-full" />
-          </div>
-        ) : (
-          <>
-            <div className="flex items-baseline gap-3">
-              <span className="font-data text-6xl font-semibold tracking-tight text-hit">
-                {formatPercent(ratio)}
-              </span>
-              <span className="text-sm text-muted">hit rate</span>
-            </div>
-
-            <div
-              className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-surface-2"
-              role="img"
-              aria-label={`${formatPercent(ratio)} hit rate: ${hits.toLocaleString()} hits, ${misses.toLocaleString()} misses`}
+    <Card className="relative overflow-hidden p-6 sm:p-7">
+      {/* faint hit-teal wash behind the hero number — atmosphere, not decoration */}
+      <div
+        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-hit/10 blur-3xl"
+        aria-hidden
+      />
+      {loading ? (
+        <div className="space-y-5">
+          <Skeleton data-testid="hit-meter-skeleton" className="h-16 w-44" />
+          <Skeleton className="h-3.5 w-full rounded-full" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+      ) : (
+        <div className="relative">
+          <span className="eyebrow">Hit rate</span>
+          <div className="mt-3 flex items-baseline gap-3">
+            <span
+              className={`font-data text-6xl font-semibold leading-none tracking-tight sm:text-7xl ${
+                total > 0 ? "text-hit" : "text-faint"
+              }`}
             >
-              <div className="h-full bg-hit" style={{ width: `${hitPct}%` }} />
-              <div className="h-full bg-miss" style={{ width: `${100 - hitPct}%` }} />
-            </div>
+              {formatPercent(ratio)}
+            </span>
+            <span className="text-sm text-muted">
+              {total > 0
+                ? `of ${total.toLocaleString()} requests served from cache`
+                : "awaiting the first request"}
+            </span>
+          </div>
 
-            <div className="mt-2 flex justify-between font-data text-xs">
-              <span className="text-hit">{hits.toLocaleString()} hits</span>
-              <span className="text-miss">{misses.toLocaleString()} misses</span>
-            </div>
-          </>
-        )}
-      </CardContent>
+          <div
+            className="mt-6 flex h-3.5 w-full overflow-hidden rounded-full bg-surface-2 ring-1 ring-inset ring-border"
+            role="img"
+            aria-label={
+              total > 0
+                ? `${formatPercent(ratio)} hit rate: ${hits.toLocaleString()} hits, ${misses.toLocaleString()} misses`
+                : "No cache activity yet"
+            }
+          >
+            {total > 0 && (
+              <div className="animate-sweep flex h-full w-full">
+                <div className="h-full bg-hit" style={{ width: `${hitPct}%` }} />
+                <div className="h-full bg-miss" style={{ width: `${100 - hitPct}%` }} />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between font-data text-xs">
+            <span className="inline-flex items-center gap-1.5 text-hit">
+              <span className="h-2 w-2 rounded-full bg-hit" aria-hidden />
+              {hits.toLocaleString()} hits
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-miss">
+              {misses.toLocaleString()} misses
+              <span className="h-2 w-2 rounded-full bg-miss" aria-hidden />
+            </span>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

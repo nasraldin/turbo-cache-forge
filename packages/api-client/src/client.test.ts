@@ -142,4 +142,59 @@ describe("api-client", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
+
+  it("GETs /api/v1/artifacts/{hash} detail", async () => {
+    const detail = {
+      hash: "abc", size_bytes: 10, tag: null,
+      created_at: "2026-07-01T00:00:00Z", last_accessed_at: "2026-07-01T00:00:00Z",
+      content: { format: "zstd-tar", total_entries: 0, truncated: false, entries: [] },
+    };
+    const fetchMock = mockFetch(detail);
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createApiClient({ baseUrl: base, getToken: async () => "jwt" });
+
+    const got = await client.getArtifact("abc");
+
+    expect(got.content.format).toBe("zstd-tar");
+    expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/v1/artifacts/abc`);
+  });
+
+  it("DELETEs a single artifact (204)", async () => {
+    const fetchMock = mockFetch(undefined, { status: 204 });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createApiClient({ baseUrl: base, getToken: async () => "jwt" });
+
+    await client.deleteArtifact("abc");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${base}/api/v1/artifacts/abc`);
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("DELETEs all artifacts and returns the count", async () => {
+    const fetchMock = mockFetch({ deleted: 3 });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createApiClient({ baseUrl: base, getToken: async () => "jwt" });
+
+    const res = await client.clearArtifacts();
+
+    expect(res.deleted).toBe(3);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${base}/api/v1/artifacts`);
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("downloads an artifact blob with the JWT attached", async () => {
+    const blob = new Blob(["RAW"]);
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, blob: async () => blob }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createApiClient({ baseUrl: base, getToken: async () => "jwt" });
+
+    const got = await client.getArtifactBlob("abc");
+
+    expect(got).toBe(blob);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${base}/api/v1/artifacts/abc/download`);
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer jwt");
+  });
 });

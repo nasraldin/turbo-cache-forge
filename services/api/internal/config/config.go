@@ -5,26 +5,33 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	Addr               string
-	DatabaseURL        string
-	StorageBackend     string // "fs" | "s3"
-	StoragePath        string
-	S3Bucket           string
-	S3Endpoint         string
-	S3Region           string
-	MaxUploadBytes     int64
-	OIDCIssuer         string
-	OIDCJWKSURL        string
-	OIDCAudience       string
-	OIDCOrgClaim       string
-	OIDCOrgEnabled     bool     // false = personal/single-tenant mode (tenant from `sub`, audience check skipped)
-	CORSAllowedOrigins []string // browser origins allowed to call /api/v1; empty = CORS off
-	RetentionDays      int
-	RollupIntervalSec  int
-	CleanupIntervalSec int
+	Addr                 string
+	DatabaseURL          string
+	StorageBackend       string // "fs" | "s3"
+	StoragePath          string
+	S3Bucket             string
+	S3Endpoint           string
+	S3Region             string
+	MaxUploadBytes       int64
+	OIDCIssuer           string
+	OIDCJWKSURL          string
+	OIDCAudience         string
+	OIDCOrgClaim         string
+	OIDCOrgEnabled       bool          // false = personal/single-tenant mode (tenant from `sub`, audience check skipped)
+	AuthMode             string        // "oidc" (default) | "builtin"
+	AuthRootUsername     string        // builtin: the single root identity
+	AuthRootPassword     string        // builtin: plaintext (bcrypt-hashed at boot); XOR with hash
+	AuthRootPasswordHash string        // builtin: precomputed bcrypt hash; XOR with plaintext
+	AuthSecret           string        // builtin: HS256 secret; random per-boot if empty
+	AuthTokenTTL         time.Duration // builtin: session JWT lifetime (default 12h)
+	CORSAllowedOrigins   []string      // browser origins allowed to call /api/v1; empty = CORS off
+	RetentionDays        int
+	RollupIntervalSec    int
+	CleanupIntervalSec   int
 }
 
 func Load() (Config, error) {
@@ -62,6 +69,25 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("OIDC_AUDIENCE is required when OIDC_ISSUER is set (unless OIDC_ORG_ENABLED=false)")
 	}
 
+	c.AuthMode = env("AUTH_MODE", "oidc")
+	if c.AuthMode != "oidc" && c.AuthMode != "builtin" {
+		return c, fmt.Errorf("AUTH_MODE must be 'oidc' or 'builtin', got %q", c.AuthMode)
+	}
+	c.AuthRootUsername = os.Getenv("AUTH_ROOT_USERNAME")
+	c.AuthRootPassword = os.Getenv("AUTH_ROOT_PASSWORD")
+	c.AuthRootPasswordHash = os.Getenv("AUTH_ROOT_PASSWORD_HASH")
+	c.AuthSecret = os.Getenv("AUTH_SECRET")
+	c.AuthTokenTTL = envDuration("AUTH_TOKEN_TTL", 12*time.Hour)
+	if c.AuthMode == "builtin" {
+		if c.AuthRootUsername == "" {
+			return c, fmt.Errorf("AUTH_ROOT_USERNAME is required when AUTH_MODE=builtin")
+		}
+		hasPw, hasHash := c.AuthRootPassword != "", c.AuthRootPasswordHash != ""
+		if hasPw == hasHash { // neither, or both
+			return c, fmt.Errorf("exactly one of AUTH_ROOT_PASSWORD or AUTH_ROOT_PASSWORD_HASH is required when AUTH_MODE=builtin")
+		}
+	}
+
 	return c, nil
 }
 
@@ -96,6 +122,15 @@ func envBool(k string, def bool) bool {
 	if v := os.Getenv(k); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
+		}
+	}
+	return def
+}
+
+func envDuration(k string, def time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return def

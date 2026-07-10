@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -76,4 +77,74 @@ func TestLoadPersonalModeNoAudience(t *testing.T) {
 	if c.OIDCOrgEnabled {
 		t.Error("OIDCOrgEnabled = true, want false")
 	}
+}
+
+func TestLoadBuiltinAuth(t *testing.T) {
+	// base sets the minimum env on the SUBTEST's t, so t.Setenv cleanup is
+	// scoped per subtest and never leaks into the next one.
+	base := func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://x")
+		t.Setenv("AUTH_MODE", "builtin")
+	}
+
+	t.Run("defaults ttl to 12h and reads username+password", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_ROOT_USERNAME", "root")
+		t.Setenv("AUTH_ROOT_PASSWORD", "hunter2")
+		c, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if c.AuthMode != "builtin" || c.AuthRootUsername != "root" || c.AuthRootPassword != "hunter2" {
+			t.Fatalf("unexpected config: %+v", c)
+		}
+		if c.AuthTokenTTL != 12*time.Hour {
+			t.Fatalf("ttl = %v, want 12h", c.AuthTokenTTL)
+		}
+	})
+
+	t.Run("missing username fails", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_ROOT_PASSWORD", "hunter2")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error for missing AUTH_ROOT_USERNAME")
+		}
+	})
+
+	t.Run("missing password fails", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_ROOT_USERNAME", "root")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error for missing password")
+		}
+	})
+
+	t.Run("both password and hash fails", func(t *testing.T) {
+		base(t)
+		t.Setenv("AUTH_ROOT_USERNAME", "root")
+		t.Setenv("AUTH_ROOT_PASSWORD", "hunter2")
+		t.Setenv("AUTH_ROOT_PASSWORD_HASH", "$2a$10$abc")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error when both password and hash set")
+		}
+	})
+
+	t.Run("unknown mode fails", func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://x")
+		t.Setenv("AUTH_MODE", "ldap")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error for unknown AUTH_MODE")
+		}
+	})
+
+	t.Run("default mode is oidc, no auth vars required", func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://x")
+		c, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if c.AuthMode != "oidc" {
+			t.Fatalf("default AuthMode = %q, want oidc", c.AuthMode)
+		}
+	})
 }

@@ -1,10 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/app/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
@@ -32,38 +30,23 @@ const columns: Column<Project>[] = [
 export default function ProjectsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const {
     data = [],
     isLoading,
     isError,
   } = useQuery({ queryKey: ["projects"], queryFn: () => api.listProjects() });
-  const create = useMutation({
-    mutationFn: () => api.createProject({ name, slug }),
-    onSuccess: () => {
-      setName("");
-      setSlug("");
-      qc.invalidateQueries({ queryKey: ["projects"] });
-    },
-  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["projects"] });
 
   return (
     <div>
-      <PageHeader title="Projects" description="Cache namespaces in this organization." />
-      <form
-        className="mb-6 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate();
-        }}
-      >
-        <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input placeholder="slug" value={slug} onChange={(e) => setSlug(e.target.value)} required />
-        <Button type="submit" variant="primary" disabled={create.isPending}>
-          {create.isPending ? "Adding…" : "Add project"}
-        </Button>
-      </form>
+      <PageHeader
+        eyebrow="Manage"
+        title="Projects"
+        description="Cache namespaces in this organization."
+        actions={
+          <CreateProjectDialog createProject={(i) => api.createProject(i)} onCreated={refresh} />
+        }
+      />
 
       {isError ? (
         <p
@@ -71,7 +54,7 @@ export default function ProjectsPage() {
           className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
         >
           Couldn&apos;t reach the cache API. Check that NEXT_PUBLIC_API_URL points at a running
-          turbo-cache-forge.
+          Turbo Cache Forge.
         </p>
       ) : isLoading ? (
         <div className="space-y-3 rounded-md border border-border p-4">
@@ -83,7 +66,7 @@ export default function ProjectsPage() {
         <DataTable
           columns={columns}
           rows={data}
-          empty="No projects yet — add one above."
+          empty="No projects yet. Create one to namespace your cache."
         />
       )}
     </div>

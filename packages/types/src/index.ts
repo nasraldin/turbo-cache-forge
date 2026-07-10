@@ -71,3 +71,30 @@ export interface CreatedToken {
   name: string;
   token: string;
 }
+
+// One tar entry inside GET /api/v1/artifacts/{hash}.content
+export interface ArtifactEntry {
+  path: string;
+  size: number;
+  is_dir: boolean;
+  preview?: string; // present only when previewable
+  previewable: boolean;
+}
+
+// Decoded contents of an artifact. "opaque" = not a decodable Turbo zstd-tar.
+export interface ArtifactContent {
+  format: "zstd-tar" | "opaque";
+  total_entries: number;
+  truncated: boolean;
+  entries: ArtifactEntry[];
+}
+
+// GET /api/v1/artifacts/{hash} — list metadata plus decoded contents.
+export interface ArtifactDetail extends Artifact {
+  content: ArtifactContent;
+}
+
+// 200 body of DELETE /api/v1/artifacts (clear-all).
+export interface ClearArtifactsResult {
+  deleted: number;
+}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	sentryhttp "github.com/getsentry/sentry-go/http"
@@ -13,12 +14,17 @@ import (
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/mgmt"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/obs"
-	"github.com/nasraldin/turbo-cache-forge/services/api/internal/oidcauth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/openapi"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/turbo"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/usage"
 )
+
+// Authenticator is satisfied by both oidcauth.Authenticator and
+// localauth.Authenticator — the router does not care which world is active.
+type Authenticator interface {
+	Middleware(next http.Handler) http.Handler
+}
 
 // Deps holds everything the router needs. Fields are added as tasks land.
 type Deps struct {
@@ -26,8 +32,11 @@ type Deps struct {
 	Repo           *db.Repo
 	MaxUploadBytes int64
 	Usage          *usage.Accumulator
-	Auth           *oidcauth.Authenticator
-	CORSOrigins    []string // browser origins allowed to call /api/v1; empty = CORS off
+	Auth           Authenticator    // oidcauth (oidc) or localauth (builtin)
+	AuthMode       string           // "oidc" | "builtin" — reported at /api/v1/auth/config
+	OrgEnabled     bool             // reported at /api/v1/auth/config
+	Login          http.HandlerFunc // non-nil only in builtin mode; serves POST /auth/login
+	CORSOrigins    []string         // browser origins allowed to call /api/v1; empty = CORS off
 }
 
 func New(d Deps) http.Handler {
@@ -66,7 +75,7 @@ func New(d Deps) http.Handler {
 
 	// Management API (OIDC/JWT) + docs — mounted only when OIDC is configured.
 	if d.Auth != nil && d.Repo != nil {
-		mh := mgmt.NewHandler(d.Repo)
+		mh := mgmt.NewHandler(d.Repo, d.Store)
 		r.Route("/api/v1", func(ar chi.Router) {
 			// public docs
 			ar.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
@@ -74,6 +83,17 @@ func New(d Deps) http.Handler {
 				_, _ = w.Write(openapi.Spec)
 			})
 			ar.Handle("/docs/*", http.StripPrefix("/api/v1/docs", openapi.Handler()))
+			// public auth discovery — lets the dashboard pick its sign-in UI.
+			ar.Get("/auth/config", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"mode":        d.AuthMode,
+					"org_enabled": d.OrgEnabled,
+				})
+			})
+			if d.Login != nil { // builtin mode only
+				ar.Post("/auth/login", d.Login)
+			}
 			// authenticated management routes
 			ar.Group(func(pr chi.Router) {
 				pr.Use(d.Auth.Middleware)

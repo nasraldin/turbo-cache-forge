@@ -14,3 +14,7 @@ node_modules/
 .turbo/
 dist/
 *.tsbuildinfo
+
+# scratch screenshots (root only)
+/.playwright-mcp/
+/*.png

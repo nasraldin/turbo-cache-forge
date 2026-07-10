@@ -1,17 +1,21 @@
 package mgmt
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/auth"
 	"github.com/nasraldin/turbo-cache-forge/services/api/internal/db"
+	"github.com/nasraldin/turbo-cache-forge/services/api/internal/storage"
 )
 
 type fakeRepo struct {
@@ -23,6 +27,11 @@ type fakeRepo struct {
 	statsSeries   []db.StatsPoint
 	seriesDaysGot int
 	artifacts     []db.Artifact
+
+	getArtifact    db.Artifact
+	getArtifactErr error
+	hashes         []string
+	deletedHash    string
 }
 
 func (f *fakeRepo) CreateToken(_ context.Context, _ int64, name, _ string) (int64, error) {
@@ -43,10 +52,52 @@ func (f *fakeRepo) StatsSeries(_ context.Context, _ int64, days int) ([]db.Stats
 func (f *fakeRepo) ListArtifacts(context.Context, int64, int, int) ([]db.Artifact, error) {
 	return f.artifacts, nil
 }
+func (f *fakeRepo) GetArtifact(_ context.Context, _ int64, _ string) (db.Artifact, error) {
+	if f.getArtifactErr != nil {
+		return db.Artifact{}, f.getArtifactErr
+	}
+	return f.getArtifact, nil
+}
+func (f *fakeRepo) ListArtifactHashes(context.Context, int64) ([]string, error) { return f.hashes, nil }
+func (f *fakeRepo) DeleteAllArtifacts(context.Context, int64) (int64, error) {
+	return int64(len(f.hashes)), nil
+}
+func (f *fakeRepo) DeleteArtifact(_ context.Context, _ int64, hash string) error {
+	f.deletedHash = hash
+	return nil
+}
+
+type fakeStore struct {
+	blobs   map[string][]byte
+	deleted []string
+}
+
+func (s *fakeStore) Put(context.Context, string, io.Reader) error { return nil }
+func (s *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, *storage.ObjectInfo, error) {
+	b, ok := s.blobs[key]
+	if !ok {
+		return nil, nil, storage.ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(b)), &storage.ObjectInfo{Size: int64(len(b))}, nil
+}
+func (s *fakeStore) Head(_ context.Context, key string) (*storage.ObjectInfo, error) {
+	b, ok := s.blobs[key]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return &storage.ObjectInfo{Size: int64(len(b))}, nil
+}
+func (s *fakeStore) Delete(_ context.Context, key string) error {
+	s.deleted = append(s.deleted, key)
+	delete(s.blobs, key)
+	return nil
+}
 
 // router injects a fixed org into context, mimicking oidcauth.Middleware.
-func testRouter(repo Repo) http.Handler {
-	h := NewHandler(repo)
+func testRouter(repo Repo) http.Handler { return testRouterWithStore(repo, &fakeStore{}) }
+
+func testRouterWithStore(repo Repo, store storage.Storage) http.Handler {
+	h := NewHandler(repo, store)
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(pr chi.Router) {
 		pr.Use(func(next http.Handler) http.Handler {
@@ -253,7 +304,7 @@ func TestListArtifactsClampsAndDefaults(t *testing.T) {
 }
 
 func TestMgmtHandlersRequireOrg(t *testing.T) {
-	h := NewHandler(&fakeRepo{})
+	h := NewHandler(&fakeRepo{}, &fakeStore{})
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(pr chi.Router) { h.Mount(pr) }) // no org-injecting middleware
 
@@ -267,6 +318,10 @@ func TestMgmtHandlersRequireOrg(t *testing.T) {
 		{http.MethodGet, "/api/v1/stats"},
 		{http.MethodGet, "/api/v1/stats/timeseries"},
 		{http.MethodGet, "/api/v1/artifacts"},
+		{http.MethodGet, "/api/v1/artifacts/abc123"},
+		{http.MethodGet, "/api/v1/artifacts/abc123/download"},
+		{http.MethodDelete, "/api/v1/artifacts/abc123"},
+		{http.MethodDelete, "/api/v1/artifacts"},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
@@ -274,5 +329,104 @@ func TestMgmtHandlersRequireOrg(t *testing.T) {
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s missing org = %d, want 401", c.method, c.path, rec.Code)
 		}
+	}
+}
+
+func zstdTar(t *testing.T, name, content string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw, _ := zstd.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	_ = tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))})
+	_, _ = tw.Write([]byte(content))
+	_ = tw.Close()
+	_ = zw.Close()
+	return buf.Bytes()
+}
+
+func TestGetArtifactReturnsManifest(t *testing.T) {
+	repo := &fakeRepo{getArtifact: db.Artifact{Hash: "abc123", SizeBytes: 10}}
+	store := &fakeStore{blobs: map[string][]byte{"org-test/abc123": zstdTar(t, "out/log.txt", "hi")}}
+	rec := httptest.NewRecorder()
+	testRouterWithStore(repo, store).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts/abc123", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET detail = %d, want 200", rec.Code)
+	}
+	var resp struct {
+		Hash    string `json:"hash"`
+		Content struct {
+			Format  string `json:"format"`
+			Entries []struct {
+				Path        string `json:"path"`
+				Preview     string `json:"preview"`
+				Previewable bool   `json:"previewable"`
+			} `json:"entries"`
+		} `json:"content"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Hash != "abc123" || resp.Content.Format != "zstd-tar" || len(resp.Content.Entries) != 1 {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if e := resp.Content.Entries[0]; e.Path != "out/log.txt" || !e.Previewable || e.Preview != "hi" {
+		t.Fatalf("entry = %+v", e)
+	}
+}
+
+func TestGetArtifactNotFound(t *testing.T) {
+	repo := &fakeRepo{getArtifactErr: db.ErrArtifactNotFound}
+	rec := httptest.NewRecorder()
+	testRouter(repo).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts/missing", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET missing = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetArtifactBadHash(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testRouter(&fakeRepo{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts/bad..hash", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("GET bad hash = %d, want 400", rec.Code)
+	}
+}
+
+func TestDeleteArtifactRemovesBlobAndRow(t *testing.T) {
+	repo := &fakeRepo{}
+	store := &fakeStore{blobs: map[string][]byte{"org-test/abc123": {1, 2, 3}}}
+	rec := httptest.NewRecorder()
+	testRouterWithStore(repo, store).ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/artifacts/abc123", nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE = %d, want 204", rec.Code)
+	}
+	if repo.deletedHash != "abc123" || len(store.deleted) != 1 || store.deleted[0] != "org-test/abc123" {
+		t.Fatalf("row=%q blobDeletes=%v", repo.deletedHash, store.deleted)
+	}
+}
+
+func TestClearArtifacts(t *testing.T) {
+	repo := &fakeRepo{hashes: []string{"h1", "h2"}}
+	store := &fakeStore{blobs: map[string][]byte{"org-test/h1": {1}, "org-test/h2": {2}}}
+	rec := httptest.NewRecorder()
+	testRouterWithStore(repo, store).ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/artifacts", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear = %d, want 200", rec.Code)
+	}
+	var resp struct {
+		Deleted int64 `json:"deleted"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Deleted != 2 || len(store.deleted) != 2 {
+		t.Fatalf("deleted=%d blobDeletes=%v", resp.Deleted, store.deleted)
+	}
+}
+
+func TestDownloadArtifactStreamsBlob(t *testing.T) {
+	store := &fakeStore{blobs: map[string][]byte{"org-test/abc123": []byte("RAWBYTES")}}
+	rec := httptest.NewRecorder()
+	testRouterWithStore(&fakeRepo{}, store).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/artifacts/abc123/download", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "RAWBYTES" {
+		t.Fatalf("download = %d body=%q", rec.Code, rec.Body.String())
+	}
+	if cd := rec.Header().Get("Content-Disposition"); cd == "" {
+		t.Fatalf("missing Content-Disposition")
 	}
 }
