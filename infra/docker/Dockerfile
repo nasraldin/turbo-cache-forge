@@ -10,11 +10,12 @@ RUN cd services/api && CGO_ENABLED=0 go build -o /out/server ./cmd/server
 FROM busybox:1.36 AS datadir
 RUN mkdir -p /data && chown -R 65532:65532 /data
 
-# Self-contained goose image for the compose "migrate" step — no external
-# goose image required (ghcr.io/pressly/goose does not reliably resolve).
+# Optional standalone goose image (e.g. to run Postgres migrations manually).
+# The default + overlay both self-migrate on boot, so this is not required to
+# run the stack. Ships the Postgres dialect set.
 FROM golang:1.25 AS goose
 RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.2
-COPY infra/migrations /migrations
+COPY services/api/internal/db/migrations/postgres /migrations
 ENTRYPOINT ["goose"]
 
 FROM gcr.io/distroless/static-debian12:nonroot AS cache-api
