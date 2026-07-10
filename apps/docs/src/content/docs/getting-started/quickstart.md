@@ -50,7 +50,8 @@ See [Configuration](/turbo-cache-forge/getting-started/configuration/) for the
 Compose auto-loads `.env` from the **compose file's directory** (`infra/docker/`),
 not the repo root. To change Postgres credentials or auth, put them in
 `infra/docker/.env` (copy [`.env.example`](/turbo-cache-forge/getting-started/configuration/)),
-or pass `--env-file`.
+or pass `--env-file`. The Postgres credentials part only applies if you're running
+the Postgres overlay described above.
 :::
 
 ## 2. Sign in to the dashboard

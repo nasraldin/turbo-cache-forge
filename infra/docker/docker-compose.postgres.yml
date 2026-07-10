@@ -15,9 +15,13 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
+    volumes: ["pgdata:/var/lib/postgresql/data"]
 
   cache-api:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-tcf}:${POSTGRES_PASSWORD:-tcf}@postgres:5432/${POSTGRES_DB:-tcf}?sslmode=disable
     depends_on:
       postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:

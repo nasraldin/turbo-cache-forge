@@ -132,7 +132,7 @@ apps/dashboard/     Next.js 15 dashboard
 apps/docs/          This documentation site (Astro Starlight)
 packages/           Shared TS types + /api/v1 client
 infra/docker/       Dockerfile (multi-target) + docker-compose
-infra/migrations/   goose SQL migrations
+services/api/internal/db/migrations/  goose SQL migrations (postgres + sqlite), embedded & run on boot
 ```
 
 It's two decoupled build worlds — **Go modules** and a **pnpm + Turborepo** workspace —

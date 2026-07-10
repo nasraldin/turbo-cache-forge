@@ -11,15 +11,24 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:///data/tcf.db}
       STORAGE_BACKEND: fs
       STORAGE_PATH: /data
+      # OIDC is off unless OIDC_ISSUER is set (then /api/v1 mounts). OIDC_ORG_ENABLED=false
+      # is personal mode: no Clerk org needed, tenant = user's `sub`, audience check skipped.
+      # Personal mode is only safe when OIDC_ISSUER is DEDICATED to this app — a Clerk
+      # instance/IdP realm shared with other apps would let any of their tokens in.
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
       OIDC_ORG_CLAIM: ${OIDC_ORG_CLAIM:-org_id}
       OIDC_ORG_ENABLED: ${OIDC_ORG_ENABLED:-true}
+      # Browser origins allowed to call /api/v1 (the dashboard). Empty = CORS off.
+      # Defaults to the dashboard's dev origin so built-in-auth login works out of
+      # the box; the browser POSTs credentials to /api/v1/auth/login cross-origin.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       USAGE_ROLLUP_INTERVAL_SEC: ${USAGE_ROLLUP_INTERVAL_SEC:-15}
       AUTH_MODE: ${AUTH_MODE:-builtin}
       AUTH_ROOT_USERNAME: ${AUTH_ROOT_USERNAME:-root}
       AUTH_ROOT_PASSWORD: ${AUTH_ROOT_PASSWORD:-root}
+      # Random per boot if left empty (sessions won't survive a restart or span
+      # replicas). Set a stable value here for persistent sessions.
       AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
     volumes: ["cache-data:/data"] # holds both artifact blobs and tcf.db
     ports: ["8080:8080"]
@@ -36,6 +45,10 @@ services:
       cache-api: { condition: service_started }
     environment:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk}
+      # CLERK_SECRET_KEY is the oidc/builtin switch for the dashboard middleware:
+      # when SET, middleware.ts runs Clerk auth. It MUST stay UNSET for the built-in
+      # AUTH_MODE (a stray dummy secret would redirect-loop every route to /sign-in).
+      # Set a real value only when you switch AUTH_MODE=oidc.
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     ports: ["3000:3000"]
 
