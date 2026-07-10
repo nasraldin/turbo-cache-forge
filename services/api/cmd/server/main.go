@@ -51,6 +51,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer repo.Close()
+	// Self-migrate on boot (embedded goose set for the active dialect). Makes
+	// the default SQLite deployment need no external migrate step; idempotent.
+	if err := repo.Migrate(ctx); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+	log.Printf("database ready (%s)", cfg.DatabaseURL)
 
 	var store storage.Storage
 	switch cfg.StorageBackend {
