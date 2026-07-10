@@ -10,9 +10,12 @@ on:
     tags: ["v*"]
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+# Cancel superseded PR runs, but NEVER cancel a push to main/tags — a canceled
+# release run can abort image publishing halfway (it did once, when a Dependabot
+# merge landed while the docker job was still building migrate + dashboard).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -40,9 +43,9 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache-dependency-path: services/${{ matrix.module }}/go.sum
@@ -71,14 +74,18 @@ jobs:
     name: js (lint, typecheck, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test
+      # Build the docs on PRs too. docs.yml only builds on push-to-main, so without
+      # this a docs-breaking dependency bump (e.g. an Astro major) would pass PR CI
+      # and only fail after merge. Guard it here.
+      - run: pnpm --filter docs build
 
   # ---- Docker: build + publish, ONLY after tests pass, ONLY on push ----------
   docker:
@@ -103,18 +110,18 @@ jobs:
             dockerfile: apps/dashboard/Dockerfile
             target: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -125,7 +132,7 @@ jobs:
       # across every name listed here.
       - name: Image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             docker.io/nasraldin/turbo-cache-forge-${{ matrix.image.name }}
@@ -137,7 +144,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
