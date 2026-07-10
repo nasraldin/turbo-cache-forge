@@ -1,0 +1,50 @@
+name: Docs
+
+# Build the Astro Starlight site and deploy it to GitHub Pages. Runs on pushes to
+# main that touch the docs (or the source docs they're generated from), and can be
+# triggered by hand. Set Pages source to "GitHub Actions" in repo Settings once.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - ".github/workflows/docs.yml"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build docs
+        run: pnpm --filter docs build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

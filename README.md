@@ -1,132 +1,126 @@
-# turbo-cache-forge
+<div align="center">
 
-A self-hosted Turborepo remote cache server (Turbo API v8) with Postgres metadata
-and a pluggable storage backend (local filesystem or S3/R2). No cloud account
-required to run it.
+<img src="apps/docs/src/assets/logo.svg" alt="Turbo Cache Forge" width="72" height="72" />
 
-**Status:** Phase 1 (Cache API MVP) is complete. See [`docs/ROADMAP.md`](docs/ROADMAP.md)
-for full status, the phased plan, and cross-phase invariants — read it first before
-working on any phase.
+# Turbo Cache Forge
 
-## Quickstart (docker compose)
+**A self-hosted [Turborepo](https://turborepo.com) remote cache you own end to end.**
+Speak the Turbo **v8** protocol, store artifacts on your own disk or S3, and watch every
+cache hit in a live dashboard — no Vercel account, no per-seat bill.
+
+[![CI](https://github.com/nasraldin/turbo-cache-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/nasraldin/turbo-cache-forge/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-github%20pages-3b82f6)](https://nasraldin.github.io/turbo-cache-forge/)
+[![Docker](https://img.shields.io/docker/v/nasraldin/turbo-cache-forge-api?label=docker&color=2496ed&sort=semver)](https://hub.docker.com/r/nasraldin/turbo-cache-forge-api)
+[![License](https://img.shields.io/github/license/nasraldin/turbo-cache-forge?color=10b981)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.25-00ADD8)](https://go.dev)
+
+📖 **[Read the docs](https://nasraldin.github.io/turbo-cache-forge/)** · 🚀 **[Quickstart](https://nasraldin.github.io/turbo-cache-forge/getting-started/quickstart/)** · 🏗 **[Architecture](https://nasraldin.github.io/turbo-cache-forge/reference/architecture/)**
+
+<img src="apps/docs/src/assets/screenshots/overview.png" alt="Turbo Cache Forge dashboard — 90.9% hit rate, storage, requests, and work saved" width="820" />
+
+</div>
+
+---
+
+## What is it?
+
+Turborepo caches each task's output keyed by a hash of its inputs. A **remote cache**
+shares those outputs across machines, so CI and teammates download results instead of
+rebuilding them — minutes become seconds. The hosted option needs a cloud account and
+bills per seat. **Turbo Cache Forge is the same capability, self-hosted:** your
+artifacts never leave your infrastructure.
+
+It's four surfaces around one Go server:
+
+| Surface | What it is | Talks to it |
+|---|---|---|
+| **Cache API** | Turbo v8 protocol (`/v8/artifacts/*`), hashed-bearer auth | the `turbo` CLI |
+| **Management API** | `/api/v1` — tokens, projects, stats, artifacts | dashboard & CLI |
+| **Dashboard** | Next.js console — hit rate, trends, artifact browser | humans |
+| **CLI** | `turbo-cache` — login, token/project, stats, doctor | operators |
+
+Metadata lives in **Postgres**; artifact blobs go to the **filesystem or any
+S3-compatible store** (AWS S3, Cloudflare R2, MinIO).
+
+## Quickstart
 
 ```bash
+git clone https://github.com/nasraldin/turbo-cache-forge.git
+cd turbo-cache-forge
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
-This starts Postgres, applies the schema migration (via a self-contained `migrate`
-service built from this repo — no external goose image needed), and starts
-`cache-api` on `http://localhost:8080` using the filesystem storage backend
-(`STORAGE_BACKEND=fs`). Only `cache-api`'s port (`8080`) is published to the
-host; Postgres is reachable only over the compose network, not from the host.
-`cache-api` runs as a non-root user (uid `65532`) in a distroless image.
-
-Seed an organization and a dev token (`turbo_dev`). The snippet below uses
-`$POSTGRES_USER` / `$POSTGRES_DB` (falling back to the `tcf` defaults) so it
-still works if you've overridden those creds (see "Overriding Postgres
-creds" below):
-
-```bash
-docker compose -f infra/docker/docker-compose.yml exec postgres \
-  psql -U "${POSTGRES_USER:-tcf}" -d "${POSTGRES_DB:-tcf}" -c \
-  "INSERT INTO organizations (slug,name) VALUES ('my-team','My Team');"
-
-TOKEN_HASH=$(printf 'turbo_dev' | shasum -a 256 | cut -d' ' -f1)
-docker compose -f infra/docker/docker-compose.yml exec postgres \
-  psql -U "${POSTGRES_USER:-tcf}" -d "${POSTGRES_DB:-tcf}" -c \
-  "INSERT INTO api_keys (org_id,name,token_hash) SELECT id,'dev','$TOKEN_HASH' FROM organizations WHERE slug='my-team';"
-```
-
-### Overriding Postgres creds
-
-Docker Compose auto-loads a `.env` file from the compose **file's directory**
-(`infra/docker/`), not the repo root and not your current working directory.
-Running `docker compose -f infra/docker/docker-compose.yml up` from the repo
-root will **not** pick up a repo-root `.env` — the `POSTGRES_*` vars will
-silently stay at the `tcf`/`tcf` defaults. To override them, do one of:
-
-1. Copy [`.env.example`](.env.example) to `infra/docker/.env` (compose
-   auto-loads it from there), or
-2. Pass `--env-file path/to/your.env` explicitly to `docker compose`, or
-3. Export `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` in your shell
-   before running `docker compose up` — compose inherits shell env vars too.
+This starts Postgres, applies migrations, and runs the cache API (`:8080`) and the
+dashboard (`:3000`). The default config uses **built-in auth** — sign in at
+**http://localhost:3000** with `root` / `root`, then create a cache token under
+**API Keys**.
 
 Point Turborepo at it:
 
 ```bash
 export TURBO_API=http://localhost:8080
-export TURBO_TOKEN=turbo_dev
-export TURBO_TEAM=my-team
-turbo run build --remote-only
+export TURBO_TOKEN=<your-token>
+export TURBO_TEAM=root
+turbo run build --remote-only     # run twice: MISS, then HIT
 ```
 
-Or exercise the protocol directly with curl:
+Or exercise the protocol directly:
 
 ```bash
-curl -s -H "Authorization: Bearer turbo_dev" \
-  "http://localhost:8080/v8/artifacts/status"                  # {"status":"enabled"}
-
-echo "fake-artifact" | curl -s -X PUT --data-binary @- \
-  -H "Authorization: Bearer turbo_dev" \
-  "http://localhost:8080/v8/artifacts/abc123?teamId=my-team"   # 202
-
-curl -s -H "Authorization: Bearer turbo_dev" \
-  "http://localhost:8080/v8/artifacts/abc123?teamId=my-team"   # -> fake-artifact
+curl -s -H "Authorization: Bearer $TURBO_TOKEN" \
+  "http://localhost:8080/v8/artifacts/status"          # {"status":"enabled"}
 ```
 
-Health/observability:
+Full walkthrough → **[Quickstart](https://nasraldin.github.io/turbo-cache-forge/getting-started/quickstart/)**.
+Prefer prebuilt images? Pull `turbo-cache-forge-{api,migrate,dashboard}` from **Docker Hub**
+(`nasraldin/…`) or **GitHub Container Registry** (`ghcr.io/nasraldin/…`) — both carry
+identical images.
 
-- `GET /live`, `GET /ready` (checks Postgres via `Repo.Ping`), `GET /metrics` (Prometheus).
+## Features
 
-### Optional: tracing + error reporting
+- **Drop-in Turbo v8** — point `TURBO_API` at your server; the CLI just works.
+- **Your storage** — filesystem by default, or S3/R2/MinIO via one env var.
+- **Live dashboard** — hit rate, daily trend chart, projects, tokens, artifact browser.
+- **Two auth worlds, separated** — hashed cache tokens vs. built-in/OIDC human sign-in.
+- **Runs anywhere** — one `docker compose up`; distroless, non-root API image.
+- **Observability** — Prometheus metrics always on; OpenTelemetry tracing and Sentry
+  opt-in, inert until configured.
 
-Both are fully inert until you set their env var:
+## Documentation
 
-- `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` — exports spans (storage + DB calls) via OTLP/HTTP to any collector (Tempo, Jaeger, `otel-collector`). Metrics stay Prometheus-only; this is tracing only.
-- `SENTRY_DSN=https://...` — reports panics and storage/DB errors that produce a 5xx. 4xx client errors are never reported.
+The full docs live at **[nasraldin.github.io/turbo-cache-forge](https://nasraldin.github.io/turbo-cache-forge/)**:
 
-### Concurrency / heavy-artifact load test
+- [What is it?](https://nasraldin.github.io/turbo-cache-forge/getting-started/what-is-it/) · [Configuration](https://nasraldin.github.io/turbo-cache-forge/getting-started/configuration/)
+- Guides: [Connect Turborepo](https://nasraldin.github.io/turbo-cache-forge/guides/connect-turborepo/) · [Authentication](https://nasraldin.github.io/turbo-cache-forge/guides/authentication/) · [Storage backends](https://nasraldin.github.io/turbo-cache-forge/guides/storage-backends/) · [Dashboard](https://nasraldin.github.io/turbo-cache-forge/guides/dashboard/) · [CLI](https://nasraldin.github.io/turbo-cache-forge/guides/cli/)
+- Reference: [Cache API](https://nasraldin.github.io/turbo-cache-forge/reference/cache-api/) · [Management API](https://nasraldin.github.io/turbo-cache-forge/reference/management-api/) · [Environment](https://nasraldin.github.io/turbo-cache-forge/reference/environment/) · [Architecture](https://nasraldin.github.io/turbo-cache-forge/reference/architecture/)
 
-Excluded from the default `go test ./...` (build-tag gated) so CI stays fast:
+## Repository layout
 
-```bash
-go test -tags loadtest -race ./internal/turbo/... -v
+```
+services/api/       Go cache + management API (own module)
+services/cli/       turbo-cache CLI (own module)
+apps/dashboard/     Next.js 15 dashboard
+apps/docs/          This documentation site (Astro Starlight)
+packages/           Shared TS types + /api/v1 client
+infra/docker/       Dockerfile (multi-target) + docker-compose
+infra/migrations/   goose SQL migrations
 ```
 
-Tear down:
+It's two decoupled build worlds — **Go modules** and a **pnpm + Turborepo** workspace —
+that communicate only over HTTP. See [Architecture](https://nasraldin.github.io/turbo-cache-forge/reference/architecture/).
 
-```bash
-docker compose -f infra/docker/docker-compose.yml down -v
-```
+## Contributing
 
-### Run locally with built-in auth (no IdP)
+Contributions welcome — see the [Contributing guide](https://nasraldin.github.io/turbo-cache-forge/project/contributing/).
+Every PR runs Go + JS tests via [CI](.github/workflows/ci.yml); merges to `main` publish
+Docker images and auto-deploy these docs.
 
-Set a root user on the API and you can sign in to the dashboard with a
-username + password — no Clerk/Keycloak needed:
+## Status
 
-```bash
-AUTH_MODE=builtin \
-AUTH_ROOT_USERNAME=root \
-AUTH_ROOT_PASSWORD=change-me \
-AUTH_SECRET=$(openssl rand -hex 32) \
-  <your usual `docker compose` / `go run ./cmd/server` invocation>
-```
+All five planned phases are complete and merged. See the
+[Roadmap](https://nasraldin.github.io/turbo-cache-forge/project/roadmap/) and
+[`docs/HANDOFF.md`](docs/HANDOFF.md).
 
-The dashboard detects the mode from `GET /api/v1/auth/config` and shows the
-built-in sign-in page automatically. Cache tokens for Turborepo are still
-minted in the dashboard exactly as before.
+## License
 
-**Dashboard note:** in built-in mode the dashboard must run with `CLERK_SECRET_KEY` unset — the Next.js middleware runs Clerk auth whenever that variable is present, which would redirect-loop the app. It is commented out in `apps/dashboard/.env.example`.
-
-## Configuration
-
-See [`.env.example`](.env.example) for every environment variable (storage backend,
-S3/R2 credentials, upload size limit, etc). `STORAGE_BACKEND=s3` switches the
-filesystem backend for S3-compatible object storage (AWS S3, Cloudflare R2, MinIO).
-
-## Repo layout
-
-- `services/api` — Go cache server (chi router, storage abstraction, Postgres repo,
-  bearer-token auth, Turbo v8 protocol handlers, Prometheus metrics).
-- `infra/migrations` — goose SQL migrations.
-- `infra/docker` — Dockerfile (multi-stage, distroless) and docker-compose stack.
+See [LICENSE](LICENSE).

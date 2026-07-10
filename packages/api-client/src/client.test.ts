@@ -186,7 +186,10 @@ describe("api-client", () => {
 
   it("downloads an artifact blob with the JWT attached", async () => {
     const blob = new Blob(["RAW"]);
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, blob: async () => blob }));
+    // mockResolvedValue (like mockFetch) keeps the call-args type as any[]; an
+    // arg-less `vi.fn(async () => …)` narrows mock.calls to an empty tuple, which
+    // then can't be destructured as [url, init].
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob } as Response);
     vi.stubGlobal("fetch", fetchMock);
     const client = createApiClient({ baseUrl: base, getToken: async () => "jwt" });
 

@@ -14,6 +14,8 @@ node_modules/
 .turbo/
 dist/
 *.tsbuildinfo
+# Astro (apps/docs) generated types + build output
+.astro/
 
 # scratch screenshots (root only)
 /.playwright-mcp/
