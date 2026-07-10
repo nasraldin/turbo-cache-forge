@@ -1,0 +1,63 @@
+---
+title: Turbo Cache Forge
+description: Self-hosted Turborepo remote cache (Turbo API v8) with Postgres metadata, pluggable filesystem/S3 storage, a management dashboard, and a CLI. No cloud account required.
+template: splash
+hero:
+  tagline: A self-hosted Turborepo remote cache you own end to end. Speak the Turbo v8 protocol, store artifacts on your own disk or S3, and watch every hit in a live dashboard — no Vercel account, no per-seat bill.
+  image:
+    file: ../../assets/screenshots/overview.png
+  actions:
+    - text: Quickstart
+      link: getting-started/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/nasraldin/turbo-cache-forge
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Why Turbo Cache Forge?
+
+Turborepo's remote cache turns a repeated CI build from minutes into seconds by
+sharing task outputs across machines. The hosted option means a cloud account and
+a bill that grows with your team. **Turbo Cache Forge is the same capability, self-hosted** —
+your artifacts never leave your infrastructure.
+
+<CardGrid stagger>
+  <Card title="Drop-in Turbo v8 protocol" icon="rocket">
+    Implements `/v8/artifacts/*` exactly as the Turborepo CLI expects. Point
+    `TURBO_API` at your server and `turbo run build --remote-only` just works.
+  </Card>
+  <Card title="Your storage, your rules" icon="setting">
+    Artifact blobs live on the local filesystem or any S3-compatible store
+    (AWS S3, Cloudflare R2, MinIO). Postgres holds only metadata.
+  </Card>
+  <Card title="Live dashboard" icon="bars">
+    A Next.js console shows hit rate, storage, per-day trends, projects,
+    tokens, and an artifact browser — all from your own data.
+  </Card>
+  <Card title="Runs anywhere" icon="docker">
+    One `docker compose up` brings up Postgres, migrations, the API, and the
+    dashboard. The API image is distroless and runs as a non-root user.
+  </Card>
+  <Card title="Two auth worlds, cleanly separated" icon="approve-check">
+    Cache tokens are hashed bearer secrets on the hot path; humans sign in with
+    a built-in password or any OIDC provider (Clerk, Keycloak, …).
+  </Card>
+  <Card title="Observability built in" icon="magnifier">
+    Prometheus metrics, optional OpenTelemetry tracing, and optional Sentry error
+    reporting — all inert until you set their env var.
+  </Card>
+</CardGrid>
+
+## Get going
+
+<CardGrid>
+  <LinkCard title="What is it?" href="getting-started/what-is-it/" description="The problem it solves and how the pieces fit together." />
+  <LinkCard title="Quickstart" href="getting-started/quickstart/" description="Run the full stack with Docker Compose in a couple of minutes." />
+  <LinkCard title="Connect Turborepo" href="guides/connect-turborepo/" description="Wire your monorepo to the cache and see MISS → HIT." />
+  <LinkCard title="Architecture" href="reference/architecture/" description="The two build worlds, the request paths, and the invariants." />
+</CardGrid>
