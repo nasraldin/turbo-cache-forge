@@ -46,8 +46,11 @@ The server's job is to round-trip the tag, which Turbo Cache Forge does. Set
 - Uploads without a signature are rejected (`400`).
 - A stored artifact with no signature is treated as a **cache miss** on GET/HEAD.
 
-This guarantees the cache only ever serves signed, integrity-checked artifacts. It's a global
-server setting; leave it `false` (default) to keep the download path database-free.
+This guarantees the cache only ever stores and serves **tagged** artifacts. The signature
+itself is verified by the `turbo` client on download (the server holds no key and does no
+crypto) — enforcement makes the presence of a signature mandatory, and the client rejects any
+artifact whose bytes don't match its tag. It's a global server setting; leave it `false`
+(default) to keep the download path database-free.
 
 ## Built-in auth (no external IdP)
 
