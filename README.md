@@ -39,8 +39,9 @@ It's four surfaces around one Go server:
 | **Dashboard** | Next.js console — hit rate, trends, artifact browser | humans |
 | **CLI** | `turbo-cache` — login, token/project, stats, doctor | operators |
 
-Metadata lives in **Postgres**; artifact blobs go to the **filesystem or any
-S3-compatible store** (AWS S3, Cloudflare R2, MinIO).
+Metadata lives in **SQLite by default — zero setup, no external database** —
+or **Postgres** when you need multi-node scale; artifact blobs go to the
+**filesystem or any S3-compatible store** (AWS S3, Cloudflare R2, MinIO).
 
 ## Quickstart
 
@@ -50,10 +51,16 @@ cd turbo-cache-forge
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
-This starts Postgres, applies migrations, and runs the cache API (`:8080`) and the
-dashboard (`:3000`). The default config uses **built-in auth** — sign in at
-**http://localhost:3000** with `root` / `root`, then create a cache token under
-**API Keys**.
+This runs the cache API (`:8080`) and the dashboard (`:3000`). No external database —
+the API self-migrates an embedded **SQLite** file on boot. The default config uses
+**built-in auth** — sign in at **http://localhost:3000** with `root` / `root`, then
+create a cache token under **API Keys**.
+
+Need Postgres instead (multi-node scale)? Add the overlay:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.postgres.yml up -d --build
+```
 
 Point Turborepo at it:
 
