@@ -31,6 +31,7 @@ export default defineConfig({
           label: "Getting Started",
           items: [
             { label: "What is Turbo Cache Forge?", slug: "getting-started/what-is-it" },
+            { label: "How it compares", slug: "getting-started/comparison" },
             { label: "Quickstart", slug: "getting-started/quickstart" },
             { label: "Configuration", slug: "getting-started/configuration" },
           ],

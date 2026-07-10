@@ -45,6 +45,7 @@ S3-compatible object store (AWS S3, Cloudflare R2, MinIO).
 
 ## Next steps
 
+- [How it compares](/turbo-cache-forge/getting-started/comparison/) — vs. Vercel Remote Cache and ducktors, honestly.
 - [Quickstart](/turbo-cache-forge/getting-started/quickstart/) — bring the whole stack up with Docker Compose.
 - [Connect Turborepo](/turbo-cache-forge/guides/connect-turborepo/) — point your monorepo at it.
 - [Architecture](/turbo-cache-forge/reference/architecture/) — how the pieces fit and the invariants that hold them apart.
