@@ -10,9 +10,12 @@ on:
     tags: ["v*"]
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+# Cancel superseded PR runs, but NEVER cancel a push to main/tags — a canceled
+# release run can abort image publishing halfway (it did once, when a Dependabot
+# merge landed while the docker job was still building migrate + dashboard).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -75,10 +78,14 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test
+      # Build the docs on PRs too. docs.yml only builds on push-to-main, so without
+      # this a docs-breaking dependency bump (e.g. an Astro major) would pass PR CI
+      # and only fail after merge. Guard it here.
+      - run: pnpm --filter docs build
 
   # ---- Docker: build + publish, ONLY after tests pass, ONLY on push ----------
   docker:
