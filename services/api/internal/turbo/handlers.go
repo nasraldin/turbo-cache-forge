@@ -30,6 +30,9 @@ type MetaRepo interface {
 	UpsertArtifact(ctx context.Context, orgID int64, hash string, size int64, tag string) error
 	ArtifactExists(ctx context.Context, orgID int64, hash string) (bool, error)
 	TouchArtifact(ctx context.Context, orgID int64, hash string) error
+	// ArtifactTag returns the stored x-artifact-tag, or "" if none. Consulted on
+	// the download path only when signature enforcement is on.
+	ArtifactTag(ctx context.Context, orgID int64, hash string) (string, error)
 }
 
 type Handler struct {
@@ -38,10 +41,13 @@ type Handler struct {
 	maxBytes int64
 	metrics  *obs.Metrics
 	usage    *usage.Accumulator
+	// requireSignature enables Turbo artifact-signature support: reject unsigned
+	// PUTs and round-trip the stored tag on GET (tagless reads become misses).
+	requireSignature bool
 }
 
-func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64, metrics *obs.Metrics, acc *usage.Accumulator) *Handler {
-	return &Handler{store: store, repo: repo, maxBytes: maxBytes, metrics: metrics, usage: acc}
+func NewHandler(store ArtifactStore, repo MetaRepo, maxBytes int64, metrics *obs.Metrics, acc *usage.Accumulator, requireSignature bool) *Handler {
+	return &Handler{store: store, repo: repo, maxBytes: maxBytes, metrics: metrics, usage: acc, requireSignature: requireSignature}
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -140,6 +146,20 @@ func (h *Handler) head(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	// Under signature enforcement an unsigned artifact is not servable, so a HEAD
+	// on it is a miss too — keeps HEAD consistent with GET.
+	if h.requireSignature {
+		tag, err := h.repo.ArtifactTag(r.Context(), org.ID, hash)
+		if err != nil {
+			obs.CaptureError(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if tag == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -150,6 +170,18 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, _ := auth.OrgFromContext(r.Context())
+
+	// Read-only tokens may pull but never push.
+	if org.ReadOnly {
+		http.Error(w, "read-only token: uploads are not permitted", http.StatusForbidden)
+		return
+	}
+	// When signature enforcement is on, unsigned uploads are rejected outright so
+	// the cache only ever holds signed artifacts.
+	if h.requireSignature && r.Header.Get("x-artifact-tag") == "" {
+		http.Error(w, "artifact signature required (x-artifact-tag header missing)", http.StatusBadRequest)
+		return
+	}
 	key := StorageKey(org.Slug, hash)
 
 	body := http.MaxBytesReader(w, r.Body, h.maxBytes)
@@ -208,6 +240,28 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rc.Close()
+
+	// Artifact-signature support: only when enforcement is on do we consult the DB
+	// for the tag stored at upload — the client re-verifies it against the bytes.
+	// A tagless artifact under enforcement is treated as a miss (matches the Turbo
+	// client, which discards unverifiable artifacts). Off by default, so the hot
+	// path stays DB-free.
+	var tag string
+	if h.requireSignature {
+		tag, err = h.repo.ArtifactTag(r.Context(), org.ID, hash)
+		if err != nil {
+			obs.CaptureError(err)
+			http.Error(w, "signature lookup failed", http.StatusInternalServerError)
+			return
+		}
+		if tag == "" {
+			h.metrics.CacheMiss.Inc()
+			h.usage.Miss(org.ID)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
 	h.metrics.CacheHit.Inc()
 	h.metrics.DownloadBytes.Add(float64(info.Size))
 	h.usage.Hit(org.ID, info.Size)
@@ -222,7 +276,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", itoa(info.Size))
-	if tag := r.Header.Get("x-artifact-tag"); tag != "" {
+	if tag != "" {
 		w.Header().Set("x-artifact-tag", tag)
 	}
 	w.WriteHeader(http.StatusOK)

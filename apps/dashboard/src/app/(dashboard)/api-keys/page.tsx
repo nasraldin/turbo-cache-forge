@@ -22,6 +22,7 @@ export default function ApiKeysPage() {
   // NOTE: fields are snake_case — revoked_at / last_used_at (NOT revokedAt / lastUsedAt).
   const columns: Column<Token>[] = [
     { header: "Name", cell: (t) => <span className="font-medium">{t.name}</span> },
+    { header: "Access", cell: (t) => (t.read_only ? <Badge variant="miss">Read-only</Badge> : <Badge variant="neutral">Read-write</Badge>) },
     { header: "Status", cell: (t) => (t.revoked_at ? <Badge variant="danger">Revoked</Badge> : <Badge>Active</Badge>) },
     { header: "Last used", cell: (t) => <span className="font-data text-muted">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "Never"}</span> },
     { header: "", cell: (t) => (t.revoked_at ? null

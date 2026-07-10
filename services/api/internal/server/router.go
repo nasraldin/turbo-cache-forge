@@ -37,6 +37,7 @@ type Deps struct {
 	OrgEnabled     bool             // reported at /api/v1/auth/config
 	Login          http.HandlerFunc // non-nil only in builtin mode; serves POST /auth/login
 	CORSOrigins    []string         // browser origins allowed to call /api/v1; empty = CORS off
+	RequireSignature bool           // REQUIRE_ARTIFACT_SIGNATURE: enforce x-artifact-tag on the cache path
 }
 
 func New(d Deps) http.Handler {
@@ -66,7 +67,7 @@ func New(d Deps) http.Handler {
 
 	// authenticated Turbo protocol
 	if d.Repo != nil {
-		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m, d.Usage)
+		th := turbo.NewHandler(d.Store, d.Repo, d.MaxUploadBytes, m, d.Usage, d.RequireSignature)
 		r.Group(func(pr chi.Router) {
 			pr.Use(auth.RequireToken(d.Repo))
 			th.Mount(pr)

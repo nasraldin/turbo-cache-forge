@@ -99,13 +99,28 @@ func TestEnsureOrgAndManagement(t *testing.T) {
 	}
 
 	// tokens: create → list (no secret) → revoke
-	id, err := r.CreateToken(ctx, org.ID, "ci", "hash-xyz")
+	id, err := r.CreateToken(ctx, org.ID, "ci", "hash-xyz", false)
 	if err != nil || id == 0 {
 		t.Fatalf("CreateToken = %d, %v", id, err)
 	}
 	keys, err := r.ListTokens(ctx, org.ID)
 	if err != nil || len(keys) != 1 || keys[0].Name != "ci" {
 		t.Fatalf("ListTokens = %+v, %v", keys, err)
+	}
+	if keys[0].ReadOnly {
+		t.Fatalf("default token should be read-write, got read_only=true")
+	}
+	// read-only token: the flag persists and rides OrgByTokenHash into the principal.
+	if _, err := r.CreateToken(ctx, org.ID, "ci-ro", "hash-ro", true); err != nil {
+		t.Fatalf("CreateToken(readOnly) = %v", err)
+	}
+	roOrg, err := r.OrgByTokenHash(ctx, "hash-ro")
+	if err != nil || !roOrg.ReadOnly {
+		t.Fatalf("OrgByTokenHash(read-only token).ReadOnly = %v, %v; want true", roOrg, err)
+	}
+	rwOrg, err := r.OrgByTokenHash(ctx, "hash-xyz")
+	if err != nil || rwOrg.ReadOnly {
+		t.Fatalf("OrgByTokenHash(read-write token).ReadOnly = %v, %v; want false", rwOrg, err)
 	}
 	ok, err := r.RevokeToken(ctx, org.ID, id)
 	if err != nil || !ok {
@@ -117,7 +132,7 @@ func TestEnsureOrgAndManagement(t *testing.T) {
 	}
 	// cross-org revoke is a no-op
 	other, _ := r.EnsureOrgByIdpID(ctx, "idp-org-other", "Other")
-	id2, _ := r.CreateToken(ctx, org.ID, "k2", "hash-2")
+	id2, _ := r.CreateToken(ctx, org.ID, "k2", "hash-2", false)
 	if ok, _ := r.RevokeToken(ctx, other.ID, id2); ok {
 		t.Fatal("cross-org revoke must not succeed")
 	}

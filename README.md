@@ -86,6 +86,28 @@ identical images.
 - **Observability** — Prometheus metrics always on; OpenTelemetry tracing and Sentry
   opt-in, inert until configured.
 
+## How it compares
+
+All three speak the **same open Turbo v8 protocol**, so switching is just a `TURBO_API` +
+token change — you're never locked in. Turbo Cache Forge's edge is the **operator
+experience**: a dashboard, observability, and a management API/CLI.
+
+| | **Turbo Cache Forge** | **Vercel Remote Cache** | **ducktors** |
+|---|:--:|:--:|:--:|
+| Hosting model | Self-hosted | Hosted SaaS | Self-hosted |
+| Data ownership | Full — your infra | Vercel-managed | Full — your infra |
+| Web dashboard | ✅ hit rate, trends, browser | Account/token only | ❌ API-only |
+| Observability | ✅ Prometheus + OTel + Sentry | Managed | Logging only |
+| Storage backends | Filesystem, S3-compatible (S3/R2/MinIO) | Managed | Filesystem, S3, **GCS, Azure**, S3-compatible |
+| Artifact signing | ✅ round-trip + optional enforcement | Managed | ✅ |
+| Read-only tokens | ✅ per-token | — | ✅ |
+| Management API + CLI | ✅ `/api/v1` + `turbo-cache` | Vercel dashboard/API | ❌ |
+| Maturity | New (2026) | Official, mature | Mature (since 2021) |
+
+Honest caveats: ducktors is more mature and adds native **GCS/Azure** backends; Vercel's
+free managed cache wins on zero-setup convenience. Full breakdown →
+**[How it compares](https://nasraldin.github.io/turbo-cache-forge/getting-started/comparison/)**.
+
 ## Documentation
 
 The full docs live at **[nasraldin.github.io/turbo-cache-forge](https://nasraldin.github.io/turbo-cache-forge/)**:

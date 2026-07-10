@@ -9,18 +9,19 @@ import type { CreatedToken } from "@tcf/types";
 // dialog-local state (`secret`) — it is never re-fetched (the list endpoint
 // returns metadata only) and is wiped by reset() on close.
 export function CreateTokenDialog({ createToken, onCreated }:
-  { createToken: (input: { name: string }) => Promise<CreatedToken>; onCreated: () => void }) {
+  { createToken: (input: { name: string; read_only?: boolean }) => Promise<CreatedToken>; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  function reset() { setName(""); setSecret(null); setBusy(false); }
+  function reset() { setName(""); setReadOnly(false); setSecret(null); setBusy(false); }
 
   async function submit() {
     setBusy(true);
     try {
-      const created = await createToken({ name });
+      const created = await createToken({ name, read_only: readOnly });
       setSecret(created.token); // held only while the dialog is open
       onCreated();
     } finally {
@@ -48,6 +49,15 @@ export function CreateTokenDialog({ createToken, onCreated }:
           <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
             <label className="block text-sm font-medium" htmlFor="token-name">Name</label>
             <Input id="token-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={readOnly}
+                onChange={(e) => setReadOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              <span>Read-only <span className="text-muted">— can pull from the cache but never push</span></span>
+            </label>
             <Button type="submit" disabled={busy || !name}>Create</Button>
           </form>
         )}

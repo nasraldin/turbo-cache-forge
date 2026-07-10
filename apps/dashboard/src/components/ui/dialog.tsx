@@ -37,7 +37,11 @@ const DialogContent = forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "relative grid h-fit w-full max-w-lg gap-4 rounded-xl border border-border bg-surface p-6 shadow-lg duration-200 ease-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-4 data-[state=closed]:slide-out-to-top-4 data-[state=closed]:duration-150",
+          // grid-cols-[minmax(0,1fr)]: let the single column shrink below its
+          // content's max-content width so `truncate`/min-w-0 children (long
+          // tokens, artifact hashes) ellipsize instead of overflowing and
+          // clipping trailing controls. Default grid min-width:auto would not.
+          "relative grid h-fit w-full max-w-lg grid-cols-[minmax(0,1fr)] gap-4 rounded-xl border border-border bg-surface p-6 shadow-lg duration-200 ease-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-4 data-[state=closed]:slide-out-to-top-4 data-[state=closed]:duration-150",
           className,
         )}
         {...props}

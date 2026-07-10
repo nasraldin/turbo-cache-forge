@@ -62,11 +62,18 @@ func (m *memStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-type memRepo struct{ exists bool }
+type memRepo struct {
+	exists bool
+	tag    string // last tag stored via UpsertArtifact; returned by ArtifactTag
+}
 
-func (m *memRepo) UpsertArtifact(context.Context, int64, string, int64, string) error { return nil }
-func (m *memRepo) ArtifactExists(context.Context, int64, string) (bool, error)        { return m.exists, nil }
-func (m *memRepo) TouchArtifact(context.Context, int64, string) error                 { return nil }
+func (m *memRepo) UpsertArtifact(_ context.Context, _ int64, _ string, _ int64, tag string) error {
+	m.tag = tag
+	return nil
+}
+func (m *memRepo) ArtifactExists(context.Context, int64, string) (bool, error) { return m.exists, nil }
+func (m *memRepo) TouchArtifact(context.Context, int64, string) error          { return nil }
+func (m *memRepo) ArtifactTag(context.Context, int64, string) (string, error)  { return m.tag, nil }
 
 // spyStore wraps memStore and records whether storage was ever touched, so
 // tests can prove a rejected request never reached the backend.
@@ -121,7 +128,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("HEAD/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New(), false)
 			rec := httptest.NewRecorder()
 			h.head(rec, requestWithHash(http.MethodHead, hash))
 			if rec.Code != http.StatusBadRequest {
@@ -135,7 +142,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("PUT/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New(), false)
 			rec := httptest.NewRecorder()
 			req := requestWithHash(http.MethodPut, hash)
 			req.Body = io.NopCloser(bytes.NewReader([]byte("payload")))
@@ -151,7 +158,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 		t.Run("GET/"+hash, func(t *testing.T) {
 			store := newSpyStore()
 			m := obs.NewMetrics()
-			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
+			h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New(), false)
 			rec := httptest.NewRecorder()
 			h.get(rec, requestWithHash(http.MethodGet, hash))
 			if rec.Code != http.StatusBadRequest {
@@ -167,7 +174,7 @@ func TestHostileHashRejectedBeforeTouchingStore(t *testing.T) {
 func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 	store := newSpyStore()
 	m := obs.NewMetrics()
-	h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New())
+	h := NewHandler(store, &memRepo{}, 1<<20, m, usage.New(), false)
 
 	rec := httptest.NewRecorder()
 	req := requestWithHash(http.MethodPut, "a1b2c3d4e5f6")
@@ -190,7 +197,7 @@ func TestValidHashStillWorksThroughHandlers(t *testing.T) {
 // helper: build a router with an org already injected into context
 func testRouter(store ArtifactStore, repo MetaRepo) (http.Handler, *obs.Metrics) {
 	m := obs.NewMetrics()
-	h := NewHandler(store, repo, 1<<20, m, usage.New())
+	h := NewHandler(store, repo, 1<<20, m, usage.New(), false)
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -255,7 +262,7 @@ func (f *failingUpsertRepo) UpsertArtifact(context.Context, int64, string, int64
 func TestPutCompensatesStorageWhenMetadataWriteFails(t *testing.T) {
 	store := newSpyStore()
 	m := obs.NewMetrics()
-	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m, usage.New())
+	h := NewHandler(store, &failingUpsertRepo{}, 1<<20, m, usage.New(), false)
 
 	rec := httptest.NewRecorder()
 	req := requestWithHash(http.MethodPut, "a1b2c3")
@@ -347,5 +354,105 @@ func TestBatchExistsRejectsHostileHash(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v8/artifacts", strings.NewReader(body)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("hostile hash = %d, want 400", rec.Code)
+	}
+}
+
+// cacheReq builds a cache-path request with an explicit principal, optional body
+// and x-artifact-tag, for exercising read-only and signature behaviour directly.
+func cacheReq(method, hash, body, tag string, org *db.Org) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("hash", hash)
+	var b io.Reader
+	if body != "" {
+		b = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, "/v8/artifacts/"+hash, b)
+	if tag != "" {
+		req.Header.Set("x-artifact-tag", tag)
+	}
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	return req.WithContext(auth.WithOrg(ctx, org))
+}
+
+func TestReadOnlyTokenRejectsPutButAllowsGet(t *testing.T) {
+	store := newSpyStore()
+	repo := &memRepo{}
+	h := NewHandler(store, repo, 1<<20, obs.NewMetrics(), usage.New(), false)
+	ro := &db.Org{ID: 1, Slug: "team-a", ReadOnly: true}
+
+	// PUT is forbidden and must never reach storage.
+	rec := httptest.NewRecorder()
+	h.put(rec, cacheReq(http.MethodPut, "abc123", "data", "", ro))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("read-only PUT = %d, want 403", rec.Code)
+	}
+	if store.putCalled {
+		t.Fatal("read-only PUT reached store.Put — must be rejected before storage")
+	}
+
+	// A read-only token can still read: seed a blob and GET it.
+	store.memStore.data[StorageKey("team-a", "abc123")] = []byte("data")
+	grec := httptest.NewRecorder()
+	h.get(grec, cacheReq(http.MethodGet, "abc123", "", "", ro))
+	if grec.Code != http.StatusOK {
+		t.Fatalf("read-only GET = %d, want 200", grec.Code)
+	}
+}
+
+func TestRequireSignatureRejectsUnsignedPut(t *testing.T) {
+	store := newSpyStore()
+	h := NewHandler(store, &memRepo{}, 1<<20, obs.NewMetrics(), usage.New(), true)
+	org := &db.Org{ID: 1, Slug: "team-a"}
+
+	rec := httptest.NewRecorder()
+	h.put(rec, cacheReq(http.MethodPut, "abc123", "data", "", org)) // no x-artifact-tag
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unsigned PUT under enforcement = %d, want 400", rec.Code)
+	}
+	if store.putCalled {
+		t.Fatal("unsigned PUT reached store.Put — must be rejected before storage")
+	}
+}
+
+func TestSignatureRoundTripReturnsStoredTag(t *testing.T) {
+	store := newSpyStore()
+	repo := &memRepo{}
+	h := NewHandler(store, repo, 1<<20, obs.NewMetrics(), usage.New(), true)
+	org := &db.Org{ID: 1, Slug: "team-a"}
+
+	prec := httptest.NewRecorder()
+	h.put(prec, cacheReq(http.MethodPut, "abc123", "artifact-bytes", "sig-tag-xyz", org))
+	if prec.Code != http.StatusAccepted {
+		t.Fatalf("signed PUT = %d, want 202", prec.Code)
+	}
+
+	// GET must return the tag STORED at upload (not echo a request header).
+	grec := httptest.NewRecorder()
+	h.get(grec, cacheReq(http.MethodGet, "abc123", "", "", org))
+	if grec.Code != http.StatusOK {
+		t.Fatalf("signed GET = %d, want 200", grec.Code)
+	}
+	if got := grec.Header().Get("x-artifact-tag"); got != "sig-tag-xyz" {
+		t.Fatalf("x-artifact-tag = %q, want %q", got, "sig-tag-xyz")
+	}
+}
+
+func TestSignatureTaglessArtifactIsMiss(t *testing.T) {
+	store := newSpyStore()
+	repo := &memRepo{} // tag == "" — an unsigned artifact already in storage
+	h := NewHandler(store, repo, 1<<20, obs.NewMetrics(), usage.New(), true)
+	org := &db.Org{ID: 1, Slug: "team-a"}
+	store.memStore.data[StorageKey("team-a", "abc123")] = []byte("data")
+
+	grec := httptest.NewRecorder()
+	h.get(grec, cacheReq(http.MethodGet, "abc123", "", "", org))
+	if grec.Code != http.StatusNotFound {
+		t.Fatalf("tagless GET under enforcement = %d, want 404 (miss)", grec.Code)
+	}
+
+	hrec := httptest.NewRecorder()
+	h.head(hrec, cacheReq(http.MethodHead, "abc123", "", "", org))
+	if hrec.Code != http.StatusNotFound {
+		t.Fatalf("tagless HEAD under enforcement = %d, want 404", hrec.Code)
 	}
 }

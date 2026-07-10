@@ -34,8 +34,8 @@ matter of changing `TURBO_API` and your token. You're never locked in.
 | Observability | ✅ Prometheus + OpenTelemetry + Sentry | Managed | Logging only |
 | Human auth | Built-in password **or** OIDC/JWT | Vercel account | — |
 | Cache-token auth | Hashed bearer tokens | Vercel tokens | Static tokens / JWT / none |
-| Artifact signing | ❌ | Managed | ✅ |
-| Read-only tokens | ❌ | — | ✅ |
+| Artifact signing | ✅ (round-trip + optional enforcement) | Managed | ✅ |
+| Read-only tokens | ✅ (per-token) | — | ✅ |
 | Management API + CLI | ✅ `/api/v1` + `turbo-cache` CLI | Vercel dashboard/API | ❌ |
 | Metadata store | Postgres (projects, usage, orgs) | Managed | None required |
 | Language | Go (distroless image) | — (SaaS) | TypeScript / Fastify |
@@ -57,8 +57,8 @@ Pick the tool that matches what you actually need — not the one with the most 
 ### Choose **ducktors/turborepo-remote-cache** if…
 - You want a **mature, battle-tested** self-hosted server (years in production, large
   community, frequent releases).
-- You need **native Google Cloud Storage or Azure Blob** backends, **artifact signing**, or
-  **read-only tokens** — all of which it has and Turbo Cache Forge does not.
+- You need **native Google Cloud Storage or Azure Blob** backends — which it has and Turbo
+  Cache Forge does not (Turbo Cache Forge covers filesystem and any S3-compatible store).
 - You want the **simplest possible** self-hosted server with **no database** to run.
 
 ### Choose **Turbo Cache Forge** if…
@@ -70,12 +70,15 @@ Pick the tool that matches what you actually need — not the one with the most 
   (`/api/v1` + `turbo-cache`).
 - You value a **Postgres-backed model** with projects, per-day usage rollups, and a
   multi-tenant organization structure.
+- You want CI-hardening controls: **per-token read-only** tokens (untrusted runners can
+  pull but never poison the cache) and **artifact-signature enforcement** — on par with
+  ducktors here.
 
 ## Honest caveats
 
 Turbo Cache Forge is the **newest** of the three. ducktors has years of production use and a
 larger community; if maturity is your top priority, that matters. We also **don't** yet have
-artifact signing, read-only tokens, or native GCS/Azure backends — if any of those are
+native GCS/Azure backends (we cover filesystem and any S3-compatible store) — if those are
 must-haves, ducktors is the better fit today. And if you don't need to self-host at all,
 Vercel's free managed cache is hard to beat on convenience.
 

@@ -27,7 +27,7 @@ func TestCreateToken(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "test-jwt")
-	got, err := c.CreateToken(context.Background(), "ci")
+	got, err := c.CreateToken(context.Background(), "ci", false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,11 @@ type Org struct {
 	ID       int64
 	Slug     string
 	IdpOrgID string
+	// ReadOnly is the read-only flag of the *token* used for this request (not a
+	// property of the org itself). It rides the per-request principal so the cache
+	// handlers can reject writes without extra context plumbing. Only set by
+	// OrgByTokenHash; zero (read-write) for the OIDC/mgmt principal.
+	ReadOnly bool
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -39,11 +44,11 @@ func (r *Repo) OrgByTokenHash(ctx context.Context, hash string) (org *Org, err e
 	ctx, span := obs.StartDBSpan(ctx, "db.OrgByTokenHash")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT o.id, o.slug FROM api_keys k
+	const q = `SELECT o.id, o.slug, k.read_only FROM api_keys k
 	           JOIN organizations o ON o.id = k.org_id
 	           WHERE k.token_hash = $1 AND k.revoked_at IS NULL`
 	var o Org
-	err = r.pool.QueryRow(ctx, q, hash).Scan(&o.ID, &o.Slug)
+	err = r.pool.QueryRow(ctx, q, hash).Scan(&o.ID, &o.Slug, &o.ReadOnly)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrUnauthorized
 		return nil, err
@@ -86,6 +91,22 @@ func (r *Repo) TouchArtifact(ctx context.Context, orgID int64, hash string) (err
 	return err
 }
 
+// ArtifactTag returns the stored x-artifact-tag (the client's HMAC signature) for
+// an artifact, or "" if the artifact has none / doesn't exist. Read on the download
+// path only when REQUIRE_ARTIFACT_SIGNATURE is on, so the default hot path stays
+// DB-free. A no-rows result is not an error — an absent tag is "".
+func (r *Repo) ArtifactTag(ctx context.Context, orgID int64, hash string) (tag string, err error) {
+	ctx, span := obs.StartDBSpan(ctx, "db.ArtifactTag")
+	defer func() { obs.EndSpan(span, err) }()
+
+	const q = `SELECT COALESCE(artifact_tag,'') FROM cache_artifacts WHERE org_id=$1 AND hash=$2`
+	err = r.pool.QueryRow(ctx, q, orgID, hash).Scan(&tag)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return tag, err
+}
+
 func orgSlugFor(idpOrgID string) string {
 	sum := sha256.Sum256([]byte(idpOrgID))
 	return "org-" + hex.EncodeToString(sum[:6]) // 12 hex chars, matches ^[a-z0-9-]+$
@@ -118,19 +139,21 @@ type APIKey struct {
 	ID         int64      `json:"id"`
 	Name       string     `json:"name"`
 	ProjectID  *int64     `json:"project_id"`
+	ReadOnly   bool       `json:"read_only"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	CreatedAt  time.Time  `json:"created_at"`
 	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
 // CreateToken stores only the SHA-256 hash (via auth.HashToken upstream);
-// the plaintext token is never persisted or logged.
-func (r *Repo) CreateToken(ctx context.Context, orgID int64, name, tokenHash string) (id int64, err error) {
+// the plaintext token is never persisted or logged. readOnly marks a token that
+// may pull from the cache but never push (enforced in internal/turbo).
+func (r *Repo) CreateToken(ctx context.Context, orgID int64, name, tokenHash string, readOnly bool) (id int64, err error) {
 	ctx, span := obs.StartDBSpan(ctx, "db.CreateToken")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `INSERT INTO api_keys (org_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id`
-	err = r.pool.QueryRow(ctx, q, orgID, name, tokenHash).Scan(&id)
+	const q = `INSERT INTO api_keys (org_id, name, token_hash, read_only) VALUES ($1, $2, $3, $4) RETURNING id`
+	err = r.pool.QueryRow(ctx, q, orgID, name, tokenHash, readOnly).Scan(&id)
 	return id, err
 }
 
@@ -139,7 +162,7 @@ func (r *Repo) ListTokens(ctx context.Context, orgID int64) (keys []APIKey, err 
 	ctx, span := obs.StartDBSpan(ctx, "db.ListTokens")
 	defer func() { obs.EndSpan(span, err) }()
 
-	const q = `SELECT id, name, project_id, last_used_at, created_at, revoked_at
+	const q = `SELECT id, name, project_id, read_only, last_used_at, created_at, revoked_at
 	           FROM api_keys WHERE org_id = $1 ORDER BY created_at DESC`
 	rows, err := r.pool.Query(ctx, q, orgID)
 	if err != nil {
@@ -148,7 +171,7 @@ func (r *Repo) ListTokens(ctx context.Context, orgID int64) (keys []APIKey, err 
 	defer rows.Close()
 	for rows.Next() {
 		var k APIKey
-		if err = rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.LastUsedAt, &k.CreatedAt, &k.RevokedAt); err != nil {
+		if err = rows.Scan(&k.ID, &k.Name, &k.ProjectID, &k.ReadOnly, &k.LastUsedAt, &k.CreatedAt, &k.RevokedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

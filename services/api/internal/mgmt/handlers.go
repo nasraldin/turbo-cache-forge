@@ -22,7 +22,7 @@ import (
 var slugRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 type Repo interface {
-	CreateToken(ctx context.Context, orgID int64, name, tokenHash string) (int64, error)
+	CreateToken(ctx context.Context, orgID int64, name, tokenHash string, readOnly bool) (int64, error)
 	ListTokens(ctx context.Context, orgID int64) ([]db.APIKey, error)
 	RevokeToken(ctx context.Context, orgID, tokenID int64) (bool, error)
 	CreateProject(ctx context.Context, orgID int64, slug, name string) (db.Project, error)
@@ -67,7 +67,8 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		ReadOnly bool   `json:"read_only"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
@@ -78,13 +79,13 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "token generation failed", http.StatusInternalServerError)
 		return
 	}
-	id, err := h.repo.CreateToken(r.Context(), org.ID, in.Name, hash)
+	id, err := h.repo.CreateToken(r.Context(), org.ID, in.Name, hash, in.ReadOnly)
 	if err != nil {
 		http.Error(w, "create failed", http.StatusInternalServerError)
 		return
 	}
 	// plaintext returned exactly once; only the hash is persisted
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": in.Name, "token": token})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": in.Name, "read_only": in.ReadOnly, "token": token})
 }
 
 func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +102,7 @@ func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, map[string]any{
-			"id": k.ID, "name": k.Name, "created_at": k.CreatedAt,
+			"id": k.ID, "name": k.Name, "read_only": k.ReadOnly, "created_at": k.CreatedAt,
 			"last_used_at": k.LastUsedAt, "revoked_at": k.RevokedAt,
 		}) // never includes token_hash
 	}

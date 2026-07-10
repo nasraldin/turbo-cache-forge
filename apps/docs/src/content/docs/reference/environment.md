@@ -14,6 +14,7 @@ where they live and the `.env` gotcha.
 | `ADDR` | `:8080` | Listen address |
 | `DATABASE_URL` | — | Postgres DSN (e.g. `postgres://tcf:tcf@postgres:5432/tcf?sslmode=disable`) |
 | `MAX_UPLOAD_BYTES` | `1073741824` | Reject artifacts larger than this (1 GiB) |
+| `REQUIRE_ARTIFACT_SIGNATURE` | `false` | Enforce Turbo artifact signatures on the cache path (see [Authentication → Signatures](/turbo-cache-forge/guides/authentication/)) |
 
 ## Storage
 

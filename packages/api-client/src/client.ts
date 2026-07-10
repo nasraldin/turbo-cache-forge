@@ -76,7 +76,7 @@ export function createApiClient(opts: ApiClientOptions) {
       return res.blob();
     },
     listTokens: () => request<Token[]>("/tokens"),
-    createToken: (input: { name: string }) =>
+    createToken: (input: { name: string; read_only?: boolean }) =>
       request<CreatedToken>("/tokens", { method: "POST", body: JSON.stringify(input) }),
     revokeToken: (id: number) => request<void>(`/tokens/${id}`, { method: "DELETE" }),
   };

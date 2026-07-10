@@ -34,8 +34,8 @@ type fakeRepo struct {
 	deletedHash    string
 }
 
-func (f *fakeRepo) CreateToken(_ context.Context, _ int64, name, _ string) (int64, error) {
-	f.created = db.APIKey{ID: 99, Name: name}
+func (f *fakeRepo) CreateToken(_ context.Context, _ int64, name, _ string, readOnly bool) (int64, error) {
+	f.created = db.APIKey{ID: 99, Name: name, ReadOnly: readOnly}
 	return 99, nil
 }
 func (f *fakeRepo) ListTokens(context.Context, int64) ([]db.APIKey, error) { return f.tokens, nil }

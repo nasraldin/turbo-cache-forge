@@ -46,6 +46,13 @@ Creates a bearer token for the Turborepo CLI. The plaintext is printed once.
 turbo-cache token create --name ci-runner
 ```
 
+Add `--read-only` to mint a token that can pull from the cache but never push — handy for
+untrusted CI runners (see [Read-only tokens](/turbo-cache-forge/guides/authentication/)):
+
+```bash
+turbo-cache token create --name ci-readers --read-only
+```
+
 ### `project create` — create a cache namespace
 
 ```bash
