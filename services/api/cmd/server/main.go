@@ -129,9 +129,10 @@ func main() {
 	srv := server.New(server.Deps{
 		Store: store, Repo: repo, MaxUploadBytes: cfg.MaxUploadBytes,
 		Usage: acc, Auth: authn, CORSOrigins: cfg.CORSAllowedOrigins,
-		AuthMode:   cfg.AuthMode,
-		OrgEnabled: cfg.AuthMode == "oidc" && cfg.OIDCOrgEnabled,
-		Login:      loginHandler,
+		AuthMode:         cfg.AuthMode,
+		OrgEnabled:       cfg.AuthMode == "oidc" && cfg.OIDCOrgEnabled,
+		Login:            loginHandler,
+		RequireSignature: cfg.RequireArtifactSignature,
 	})
 	log.Printf("turbo-cache-forge listening on %s (backend=%s)", cfg.Addr, cfg.StorageBackend)
 	if err := http.ListenAndServe(cfg.Addr, srv); err != nil {

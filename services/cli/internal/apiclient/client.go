@@ -75,9 +75,11 @@ type createTokenResponse struct {
 }
 
 // CreateToken calls POST /api/v1/tokens and returns the plaintext token.
-func (c *Client) CreateToken(ctx context.Context, name string) (string, error) {
+// readOnly mints a token that may pull from the cache but never push.
+func (c *Client) CreateToken(ctx context.Context, name string, readOnly bool) (string, error) {
 	var out createTokenResponse
-	if err := c.do(ctx, http.MethodPost, "/api/v1/tokens", map[string]string{"name": name}, &out); err != nil {
+	body := map[string]any{"name": name, "read_only": readOnly}
+	if err := c.do(ctx, http.MethodPost, "/api/v1/tokens", body, &out); err != nil {
 		return "", err
 	}
 	return out.Token, nil

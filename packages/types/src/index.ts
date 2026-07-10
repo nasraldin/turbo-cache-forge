@@ -58,17 +58,19 @@ export interface StatsPoint {
 export interface Token {
   id: number;
   name: string;
+  read_only: boolean; // read-only tokens may pull from the cache but never push
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
 }
 
 // 201 body of POST /api/v1/tokens — plaintext present exactly once, on
-// create. The backend only echoes id/name/token here (no timestamps), so
-// this does NOT extend Token.
+// create. The backend only echoes id/name/read_only/token here (no timestamps),
+// so this does NOT extend Token.
 export interface CreatedToken {
   id: number;
   name: string;
+  read_only: boolean;
   token: string;
 }
 

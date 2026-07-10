@@ -32,6 +32,12 @@ type Config struct {
 	RetentionDays        int
 	RollupIntervalSec    int
 	CleanupIntervalSec   int
+	// RequireArtifactSignature enables Turbo artifact-signature support on the
+	// cache path: PUTs must carry an x-artifact-tag (else 400), and GET/HEAD of a
+	// tagless artifact is a miss (404). Signing/verification is client-side; the
+	// server only round-trips the tag. Off by default — keeps the download hot
+	// path DB-free.
+	RequireArtifactSignature bool
 }
 
 func Load() (Config, error) {
@@ -62,6 +68,7 @@ func Load() (Config, error) {
 	c.RetentionDays = int(envInt("RETENTION_DAYS", 30))
 	c.RollupIntervalSec = int(envInt("USAGE_ROLLUP_INTERVAL_SEC", 300))
 	c.CleanupIntervalSec = int(envInt("CLEANUP_INTERVAL_SEC", 3600))
+	c.RequireArtifactSignature = envBool("REQUIRE_ARTIFACT_SIGNATURE", false)
 
 	// Audience only pins a tenant when orgs are on. In personal mode the tenant
 	// is the user's `sub`, so a self-host trusting its own issuer needs no audience.
