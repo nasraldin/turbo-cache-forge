@@ -23,7 +23,7 @@
     "echarts": "6.1.0",
     "echarts-for-react": "3.0.7",
     "lucide-react": "1.23.0",
-    "next": "15.5.20",
+    "next": "15.5.27",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "sonner": "2.0.7",
@@ -41,10 +41,10 @@
     "@vitejs/plugin-react": "4.7.0",
     "autoprefixer": "10.5.2",
     "jsdom": "29.1.1",
-    "postcss": "8.5.16",
+    "postcss": "8.5.23",
     "tailwindcss": "3.4.19",
     "tailwindcss-animate": "1.0.7",
     "typescript": "5.6.3",
-    "vitest": "3.2.6"
+    "vitest": "4.1.11"
   }
 }
