@@ -20,7 +20,7 @@ path.)
 cd apps/example
 pnpm install
 
-export TURBO_API=http://localhost:8080
+export TURBO_API=http://localhost:8470
 export TURBO_TOKEN=turbo_xxxxxxxx        # the token from step 1
 export TURBO_TEAM=your-org-slug          # any value; the backend keys off the token
 ```

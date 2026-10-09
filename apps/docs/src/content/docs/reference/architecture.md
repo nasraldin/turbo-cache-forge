@@ -66,9 +66,9 @@ of one without breaking the others — and reason about each in isolation.
 
 The multi-stage `infra/docker/Dockerfile` produces several targets from one build:
 
-- **`cache-api`** — the Go server, distroless, non-root (uid `65532`), port `8080`.
+- **`cache-api`** — the Go server, distroless, non-root (uid `65532`), listens on `8080` and is published on the host as `8470`.
 - **`goose`** — a self-contained migrator that applies `infra/migrations/*.sql`.
 
 The dashboard has its own `apps/dashboard/Dockerfile` (Node 20, Next.js standalone
-output, port `3000`). CI publishes all three to Docker Hub — see
+output, listens on `3000` and is published on the host as `3470`). CI publishes all three to Docker Hub — see
 [Contributing](/turbo-cache-forge/project/contributing/).

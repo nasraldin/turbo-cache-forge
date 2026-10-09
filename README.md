@@ -51,9 +51,9 @@ cd turbo-cache-forge
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
-This runs the cache API (`:8080`) and the dashboard (`:3000`). No external database —
+This runs the cache API (`:8470`) and the dashboard (`:3470`). No external database —
 the API self-migrates an embedded **SQLite** file on boot. The default config uses
-**built-in auth** — sign in at **http://localhost:3000** with `root` / `root`, then
+**built-in auth** — sign in at **http://localhost:3470** with `root` / `root`, then
 create a cache token under **API Keys**.
 
 Need Postgres instead (multi-node scale)? Add the overlay:
@@ -65,7 +65,7 @@ docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose
 Point Turborepo at it:
 
 ```bash
-export TURBO_API=http://localhost:8080
+export TURBO_API=http://localhost:8470
 export TURBO_TOKEN=<your-token>
 export TURBO_TEAM=root
 turbo run build --remote-only     # run twice: MISS, then HIT
@@ -75,7 +75,7 @@ Or exercise the protocol directly:
 
 ```bash
 curl -s -H "Authorization: Bearer $TURBO_TOKEN" \
-  "http://localhost:8080/v8/artifacts/status"          # {"status":"enabled"}
+  "http://localhost:8470/v8/artifacts/status"          # {"status":"enabled"}
 ```
 
 Full walkthrough → **[Quickstart](https://nasraldin.github.io/turbo-cache-forge/getting-started/quickstart/)**.

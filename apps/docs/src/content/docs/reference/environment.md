@@ -11,7 +11,7 @@ where they live and the `.env` gotcha.
 
 | Variable | Default | Description |
 |---|---|---|
-| `ADDR` | `:8080` | Listen address |
+| `ADDR` | `:8080` | Listen address inside the process. Compose publishes it on the host as `8470` |
 | `DATABASE_URL` | `sqlite:///data/tcf.db` | Empty/unset → SQLite at the default path; `sqlite:/path` → SQLite elsewhere; `postgres://user:pass@host:5432/db?sslmode=disable` → Postgres. See [Configuration](/turbo-cache-forge/getting-started/configuration/) |
 | `MAX_UPLOAD_BYTES` | `1073741824` | Reject artifacts larger than this (1 GiB) |
 | `REQUIRE_ARTIFACT_SIGNATURE` | `false` | Enforce Turbo artifact signatures on the cache path (see [Authentication → Signatures](/turbo-cache-forge/guides/authentication/)) |
@@ -74,7 +74,7 @@ The management API mounts only when `OIDC_ISSUER` is set (or in built-in mode).
 
 | Variable | Default | Description |
 |---|---|---|
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Browser origins allowed to call `/api/v1`. Empty = CORS off |
+| `CORS_ALLOWED_ORIGINS` | *(empty)* | Browser origins allowed to call `/api/v1`. Empty = CORS off. Compose sets `http://localhost:3470` |
 
 ## Observability (optional, inert until set)
 
@@ -87,7 +87,7 @@ The management API mounts only when `OIDC_ISSUER` is set (or in built-in mode).
 
 | Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Where the browser reaches the API |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8470` | Where the browser reaches the API (Compose host port) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | — | Clerk publishable key (OIDC mode) |
 | `CLERK_SECRET_KEY` | — | **Must be unset in built-in mode** — its presence makes middleware enforce Clerk and redirect-loop |
 | `NEXT_PUBLIC_ORG_ENABLED` | `false` | Show the org switcher (Clerk orgs) |

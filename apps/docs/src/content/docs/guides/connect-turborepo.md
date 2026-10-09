@@ -10,7 +10,7 @@ three environment variables.
 ## Point `turbo` at your server
 
 ```bash
-export TURBO_API=http://localhost:8080   # your cache server
+export TURBO_API=http://localhost:8470   # your cache server
 export TURBO_TOKEN=<your-token>          # from Dashboard → API Keys
 export TURBO_TEAM=root                   # your organization slug
 ```
@@ -37,7 +37,7 @@ and team at runtime:
 // turbo.json
 {
   "remoteCache": {
-    "apiUrl": "http://localhost:8080"
+    "apiUrl": "http://localhost:8470"
   }
 }
 ```
@@ -68,16 +68,16 @@ useful for debugging connectivity and auth:
 ```bash
 # Is remote caching enabled for this token?
 curl -s -H "Authorization: Bearer $TURBO_TOKEN" \
-  "http://localhost:8080/v8/artifacts/status"          # {"status":"enabled"}
+  "http://localhost:8470/v8/artifacts/status"          # {"status":"enabled"}
 
 # Upload an artifact (PUT, streaming body) — returns 202
 echo "fake-artifact" | curl -s -X PUT --data-binary @- \
   -H "Authorization: Bearer $TURBO_TOKEN" \
-  "http://localhost:8080/v8/artifacts/abc123?teamId=root"
+  "http://localhost:8470/v8/artifacts/abc123?teamId=root"
 
 # Download it back
 curl -s -H "Authorization: Bearer $TURBO_TOKEN" \
-  "http://localhost:8080/v8/artifacts/abc123?teamId=root"   # -> fake-artifact
+  "http://localhost:8470/v8/artifacts/abc123?teamId=root"   # -> fake-artifact
 ```
 
 The full endpoint list is in the [Cache API reference](/turbo-cache-forge/reference/cache-api/).

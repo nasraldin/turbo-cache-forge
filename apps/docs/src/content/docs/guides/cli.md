@@ -26,7 +26,7 @@ The first thing to run when something isn't working. It checks that the API is
 reachable, that health endpoints respond, and that your credentials are valid.
 
 ```bash
-turbo-cache doctor --api http://localhost:8080
+turbo-cache doctor --api http://localhost:8470
 ```
 
 ### `login` — authenticate via OIDC device flow

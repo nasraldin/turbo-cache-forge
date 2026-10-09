@@ -58,7 +58,7 @@ All require a session — a built-in JWT (from `/auth/login`) or an OIDC JWT —
 ## Example: log in and create a token
 
 ```bash
-API=http://localhost:8080
+API=http://localhost:8470
 
 # 1. built-in login -> session JWT
 JWT=$(curl -s -X POST "$API/api/v1/auth/login" \

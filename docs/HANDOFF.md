@@ -32,8 +32,8 @@ Both are seeded with the Clerk instance `loving-toucan-71`. (The publishable key
 **Full stack (Docker):**
 ```bash
 docker compose -f infra/docker/docker-compose.yml --env-file infra/docker/.env up -d --build
-# Dashboard  → http://localhost:3000   (Clerk login works with the real keys)
-# Cache/mgmt API → http://localhost:8080  ( /live, /ready, /v8/artifacts/* )
+# Dashboard  → http://localhost:3470   (Clerk login works with the real keys)
+# Cache/mgmt API → http://localhost:8470  ( /live, /ready, /v8/artifacts/* )
 docker compose -f infra/docker/docker-compose.yml down        # stop
 ```
 
@@ -46,7 +46,7 @@ pnpm --filter dashboard dev        # http://localhost:3000, reads apps/dashboard
 **CLI:**
 ```bash
 cd services/cli && go build -o /tmp/turbo-cache ./cmd/turbo-cache
-/tmp/turbo-cache doctor --api http://localhost:8080     # diagnoses config/connectivity/auth
+/tmp/turbo-cache doctor --api http://localhost:8470     # diagnoses config/connectivity/auth
 ```
 
 ### What works out of the box

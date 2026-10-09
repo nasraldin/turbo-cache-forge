@@ -32,7 +32,7 @@ artifact bodies are never buffered whole in memory.
 
 ```bash
 TOKEN=<your-token>
-API=http://localhost:8080
+API=http://localhost:8470
 
 # status
 curl -s -H "Authorization: Bearer $TOKEN" \

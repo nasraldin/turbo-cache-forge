@@ -63,7 +63,7 @@ func Load() (Config, error) {
 	c.OIDCAudience = os.Getenv("OIDC_AUDIENCE")
 	c.OIDCOrgClaim = env("OIDC_ORG_CLAIM", "org_id")
 	c.OIDCOrgEnabled = envBool("OIDC_ORG_ENABLED", true)
-	c.CORSAllowedOrigins = csv(os.Getenv("CORS_ALLOWED_ORIGINS")) // e.g. "http://localhost:3000"
+	c.CORSAllowedOrigins = csv(os.Getenv("CORS_ALLOWED_ORIGINS")) // e.g. "http://localhost:3470"
 	c.RetentionDays = int(envInt("RETENTION_DAYS", 30))
 	c.RollupIntervalSec = int(envInt("USAGE_ROLLUP_INTERVAL_SEC", 300))
 	c.CleanupIntervalSec = int(envInt("CLEANUP_INTERVAL_SEC", 3600))

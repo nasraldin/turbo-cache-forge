@@ -5,7 +5,7 @@ description: A tour of the Next.js management console — hit rate, statistics, 
 
 The dashboard is a Next.js console that talks **only** to the management API
 (`/api/v1`) — never to storage, the database, or the cache path directly. It reads
-your live data and renders it. Sign in at **http://localhost:3000** (built-in mode:
+your live data and renders it. Sign in at **http://localhost:3470** (built-in mode:
 `root` / `root` by default).
 
 ## Overview

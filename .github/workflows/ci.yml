@@ -150,5 +150,5 @@ jobs:
           cache-to: type=gha,mode=max
           # Only the dashboard image consumes build args; the others ignore them.
           build-args: |
-            NEXT_PUBLIC_API_URL=http://localhost:8080
+            NEXT_PUBLIC_API_URL=http://localhost:8470
             NEXT_PUBLIC_ORG_ENABLED=false

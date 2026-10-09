@@ -13,7 +13,7 @@ COPY --from=deps /repo /repo
 COPY packages ./packages
 COPY apps/dashboard ./apps/dashboard
 # NEXT_PUBLIC_* is inlined at build time — pass both as build args.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+ARG NEXT_PUBLIC_API_URL=http://localhost:8470
 # valid-FORMAT throwaway so the build's Clerk key-format check passes; override with the real (public) key.
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
 # false (default) = personal mode: hide <OrganizationSwitcher/> (Clerk orgs disabled).

@@ -10,7 +10,7 @@ Compose. No external database is required: the API self-migrates an embedded
 ## Prerequisites
 
 - **Docker** with Compose v2 (`docker compose version`).
-- Ports **8080** (API) and **3000** (dashboard) free on the host.
+- Ports **8470** (API) and **3470** (dashboard) free on the host.
 
 ## 1. Start the stack
 
@@ -24,8 +24,8 @@ This starts two services:
 
 | Service | Port | Role |
 |---|---|---|
-| `cache-api` | **8080** | Turbo v8 cache + `/api/v1` management API |
-| `dashboard` | **3000** | Next.js web console |
+| `cache-api` | **8470** | Turbo v8 cache + `/api/v1` management API |
+| `dashboard` | **3470** | Next.js web console |
 
 `cache-api` self-migrates its metadata store — an embedded **SQLite** file at
 `/data/tcf.db`, inside the persisted `cache-data` volume — on boot, so there's no
@@ -57,7 +57,7 @@ the Postgres overlay described above.
 ## 2. Sign in to the dashboard
 
 The default compose config uses **built-in auth** (`AUTH_MODE=builtin`) with a single
-root user (`root` / `root`). Open **http://localhost:3000** and sign in.
+root user (`root` / `root`). Open **http://localhost:3470** and sign in.
 
 You'll land on the Overview with a live hit rate, storage usage, and request counts.
 See the [dashboard tour](/turbo-cache-forge/guides/dashboard/) for every screen.
@@ -76,7 +76,7 @@ In the dashboard, go to **API Keys → New token**. The plaintext token is shown
 ## 4. Point Turborepo at it
 
 ```bash
-export TURBO_API=http://localhost:8080
+export TURBO_API=http://localhost:8470
 export TURBO_TOKEN=<your-token>
 export TURBO_TEAM=root          # your organization slug
 turbo run build --remote-only
