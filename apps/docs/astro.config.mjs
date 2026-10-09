@@ -26,6 +26,9 @@ export default defineConfig({
         baseUrl:
           "https://github.com/nasraldin/turbo-cache-forge/edit/main/apps/docs/",
       },
+      // 404.md is the not-found page. Starlight's injected /404 route would
+      // render the same entry a second time and collide with the docs route.
+      disable404Route: true,
       sidebar: [
         {
           label: "Getting Started",

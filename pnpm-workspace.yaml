@@ -2,9 +2,69 @@ packages:
   - "apps/*"
   - "!apps/example" # self-contained demo monorepo with its own workspace; run it on its own
   - "packages/*"
+allowBuilds:
+  '@clerk/shared': true
+  esbuild: true
+  sharp: true
 
 # Force patched versions of transitive deps flagged by Dependabot.
 # (pnpm 10+ reads overrides from here, not package.json.)
 overrides:
-  postcss@<8.5.10: ">=8.5.10" # GHSA-qx2v-qp2m-jg93 (XSS via unescaped </style>)
+  '@vitest/mocker@>=2.1.0 <4.1.11': '>=4.1.11'
+  astro@<7.2.8: '>=7.2.8'
+  astro@<=7.2.3: '>=7.2.4'
+  astro@>=2.9.0 <=7.0.9: '>=7.1.0'
+  baseline-browser-mapping@>=2.0.0 <2.11.0: '>=2.11.0'
+  browserslist@<=4.28.6: '>=4.28.7'
+  devalue@<5.9.1: '>=5.9.2'
+  devalue@<=5.9.2: '>=5.9.3'
+  devalue@>=1.0.0 <=5.9.2: '>=5.9.3'
+  devalue@>=5.1.0 <=5.9.2: '>=5.9.3'
+  devalue@>=5.8.0 <=5.9.2: '>=5.9.3'
   esbuild@<0.28.1: ">=0.28.1" # GHSA-g7r4-m6w7-qqqr (dev-server file read on Windows)
+  # Stay on 4.x. Starlight imports the default export (`import yaml from "js-yaml"`),
+  # which js-yaml 5 removed. 4.3.2 is the patched release inside that API.
+  js-yaml@>=4.0.0 <4.3.1: ">=4.3.2 <5"
+  js-yaml@>=4.0.0 <4.3.2: ">=4.3.2 <5"
+  nanoid@<3.3.16: '>=3.3.16'
+  nanoid@<3.3.18: '>=3.3.18'
+  next@>=10.0.0 <15.5.24: '>=15.5.24'
+  next@>=12.0.0 <15.5.21: '>=15.5.21'
+  next@>=13.0.0 <15.5.21: '>=15.5.21'
+  next@>=13.4.0 <15.5.24: '>=15.5.24'
+  next@>=14.1.1 <15.5.21: '>=15.5.21'
+  next@>=15.0.0 <15.5.27: '>=15.5.27'
+  next@>=15.5.0 <15.5.21: '>=15.5.21'
+  postcss-selector-parser@<7.1.6: '>=7.1.6'
+  postcss@<8.5.10: ">=8.5.10" # GHSA-qx2v-qp2m-jg93 (XSS via unescaped </style>)
+  postcss@<=8.5.17: '>=8.5.18'
+  postcss@<=8.5.22: '>=8.5.23'
+  sharp@<0.35.0: '>=0.35.0'
+  sharp@<0.35.4: '>=0.35.4'
+  sharp@<0.35.5: '>=0.35.5'
+  smol-toml@<=1.7.0: '>=1.7.1'
+  smol-toml@<=1.8.0: '>=1.9.0'
+  source-map-js@>=1.0.0 <1.2.2: '>=1.2.2'
+  svgo@>=4.0.0 <4.0.2: '>=4.0.2'
+  svgo@>=4.0.0 <4.1.0: '>=4.1.0'
+  tinypool@<2.1.2: '>=2.1.2'
+  tinypool@<=2.1.0: '>=2.1.1'
+  # jsdom 29 imports undici's private lib/handler/wrap-handler.js, removed in undici 8.
+  # 7.29.1 is the patched release inside the 7.x API jsdom declares (^7.25.0).
+  undici@>=7.0.0 <7.29.0: ">=7.29.1 <8"
+  undici@>=7.0.0 <7.29.1: ">=7.29.1 <8"
+  undici@>=7.1.0 <7.29.1: ">=7.29.1 <8"
+  undici@>=7.11.0 <7.29.1: ">=7.29.1 <8"
+  undici@>=7.15.0 <7.29.1: ">=7.29.1 <8"
+  undici@>=7.24.1 <7.29.1: ">=7.29.1 <8"
+  undici@>=7.28.0 <7.29.1: ">=7.29.1 <8"
+  vitest@>=2.1.0 <4.1.11: '>=4.1.11'
+
+# Unfixable transitive advisories (registry patched range is <0.0.0, so overrides cannot help).
+# pnpm 10 reads GHSA ignores from auditConfig.ignoreGhsas. Drop an entry once a real fix exists.
+auditConfig:
+  ignoreGhsas:
+    # apps/docs via astro: max-stale can disclose cross-user cached responses
+    - GHSA-ch52-4w7c-c8xp # http-cache-semantics
+    # apps/dashboard via tailwindcss > chokidar: stack exhaustion on deeply nested patterns
+    - GHSA-vfj7-8cjw-p6xm # braces
