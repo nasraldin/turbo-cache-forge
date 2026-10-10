@@ -1,6 +1,39 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Tailwind v4 reads design tokens from @theme. `inline` makes utilities
+ * point at the CSS variables below, so the light-theme overrides keep working.
+ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-elevated: var(--elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-hit: var(--hit);
+  --color-miss: var(--miss);
+  --color-danger: var(--danger);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 22px;
+
+  --shadow-sm: var(--tcf-shadow-sm);
+  --shadow-md: var(--tcf-shadow-md);
+  --shadow-lg: var(--tcf-shadow-lg);
+
+  --max-width-content: 1180px;
+}
 
 /*
  * Design tokens — a "control room" telemetry console for a build cache.
@@ -23,9 +56,9 @@
   --miss: #eb9142;
   --danger: #ef5f57;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 10px 30px -12px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.75);
+  --tcf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --tcf-shadow-md: 0 10px 30px -12px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.45);
+  --tcf-shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.75);
 }
 
 :root[data-theme="light"] {
@@ -42,9 +75,9 @@
   --miss: #bd6519;
   --danger: #c6413a;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
+  --tcf-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --tcf-shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
+  --tcf-shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
 }
 
 @media (prefers-color-scheme: light) {
@@ -62,9 +95,9 @@
     --miss: #bd6519;
     --danger: #c6413a;
 
-    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-    --shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
-    --shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
+    --tcf-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --tcf-shadow-md: 0 14px 30px -14px rgba(16, 24, 40, 0.18), 0 2px 6px -2px rgba(16, 24, 40, 0.08);
+    --tcf-shadow-lg: 0 30px 70px -22px rgba(16, 24, 40, 0.24);
   }
 }
 

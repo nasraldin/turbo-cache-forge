@@ -12,7 +12,7 @@ cache hit in a live dashboard — no Vercel account, no per-seat bill.
 [![Docs](https://img.shields.io/badge/docs-github%20pages-3b82f6)](https://nasraldin.github.io/turbo-cache-forge/)
 [![Docker](https://img.shields.io/docker/v/nasraldin/turbo-cache-forge-api?label=docker&color=2496ed&sort=semver)](https://hub.docker.com/r/nasraldin/turbo-cache-forge-api)
 [![License](https://img.shields.io/github/license/nasraldin/turbo-cache-forge?color=10b981)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.25-00ADD8)](https://go.dev)
+[![Go](https://img.shields.io/badge/go-1.27-00ADD8)](https://go.dev)
 
 📖 **[Read the docs](https://nasraldin.github.io/turbo-cache-forge/)** · 🚀 **[Quickstart](https://nasraldin.github.io/turbo-cache-forge/getting-started/quickstart/)** · 🏗 **[Architecture](https://nasraldin.github.io/turbo-cache-forge/reference/architecture/)**
 

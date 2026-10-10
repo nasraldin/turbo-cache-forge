@@ -41,7 +41,7 @@ These were established in Phase 1 and are load-bearing. Any change that violates
 - **Tenant isolation is layered** — `org_slug/hash` key + `validHash` boundary check + DB `CHECK(slug ~ '^[a-z0-9-]+$')` + `UNIQUE(org_id, hash)`. Any new key-building path must validate both sides.
 - **One metrics pipeline** — Prometheus. OTel is tracing-only, a no-op unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 - **Storage via the `storage.Storage` interface only** — no direct disk/S3 calls in handlers. New backends must pass `storagetest.Run`.
-- **Toolchain:** Go 1.25 (raised from 1.24 for aws-sdk-go-v2); pgx no longer pinned — go1.24-compat pin removed now that the module floor is 1.25.
+- **Toolchain:** Go 1.27; pgx is unpinned and follows the module's current release.
 - **SaaS-ready shape:** `org_id` on every table; quota columns present but unenforced until a phase turns them on.
 
 ---

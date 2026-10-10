@@ -31,7 +31,7 @@ const DialogContent = forwardRef<
     <DialogOverlay />
     {/* Flex wrapper centers the panel horizontally and anchors it near the top,
         so the panel needs no centering transform of its own — that lets the
-        tailwindcss-animate slide use `transform` cleanly and read as a true
+        tw-animate-css slide use `transform` cleanly and read as a true
         drop-from-top-center (no origin fighting between centering + slide). */}
     <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto p-4 pt-[10vh] sm:pt-[12vh]">
       <DialogPrimitive.Content

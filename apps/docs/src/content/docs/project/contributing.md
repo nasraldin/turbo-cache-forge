@@ -8,7 +8,7 @@ need the one for the part you're changing.
 
 ## Prerequisites
 
-- **Go 1.25+** — for `services/api` and `services/cli`.
+- **Go 1.27+** — for `services/api` and `services/cli`.
 - **Node 20 + pnpm 9** — for the dashboard, docs, and shared packages.
 - **Docker** — to run the full stack.
 

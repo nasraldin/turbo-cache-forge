@@ -9,9 +9,11 @@
     "lint": "eslint src --max-warnings 0 || true",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@tcf/types": "workspace:*" },
+  "dependencies": {
+    "@tcf/types": "workspace:*"
+  },
   "devDependencies": {
-    "typescript": "5.6.3",
-    "vitest": "3.2.6"
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
   }
 }
