@@ -1,0 +1,36 @@
+name: Ajrly dashboard image
+
+# The dashboard inlines NEXT_PUBLIC_API_URL at build time, so the upstream image
+# (localhost API) cannot serve https://turbo.ajrly.com. Publishes a homelab build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/dashboard/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/turbo-cache-forge-dashboard-ajrly:sha-${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://turbo-cache.ajrly.com
+            NEXT_PUBLIC_ORG_ENABLED=false
+      - name: Pin this in homelab-platform-services versions.env
+        run: echo "TCF_DASHBOARD_IMAGE=ghcr.io/${{ github.repository_owner }}/turbo-cache-forge-dashboard-ajrly@${{ steps.build.outputs.digest }}"
